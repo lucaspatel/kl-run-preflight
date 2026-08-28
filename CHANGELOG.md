@@ -15,6 +15,25 @@ until the first release is tagged.
 
 ### Added
 
+- **Every Illumina run now has an `illumina_run` record.** A run loaded from the
+  amplicon prep template is sequenced on Illumina but the prep template
+  records no run configuration, so it previously produced a database with
+  `platform = Illumina` and no `illumina_run` row — the first break in an
+  invariant that held across every other preflight. The amplicon loader now
+  inserts an `illumina_run` row whose configuration columns are all NULL,
+  meaning "this ran on Illumina; this document does not state the run config".
+  A guard test loads every legacy sheet — sectioned and flat — and fails if any
+  run's platform and its run-config table disagree.
+- **`illumina_run.read1_length` / `read2_length` are nullable** (schema patch
+  `005`), so a run whose source document omits read lengths can still carry an
+  `illumina_run` row. NULL expresses "not recorded", which `0` cannot. The patch
+  rebuilds the table, since SQLite cannot drop `NOT NULL` in place, dropping and
+  recreating the four dependent views around the rebuild.
+- **Native fixture snapshots record `user_version`.** The snapshots exist to make
+  the opaque `.sqlite` diffs reviewable, but omitted the schema version — the one
+  piece of structure held outside `sqlite_master`. A database stale in version
+  alone compared equal, and the version bump behind a fixture regeneration was
+  invisible in review. `capture_db_snapshot` now captures it.
 - **EMP amplicon prep-template support.** Adds the EMP amplicon prep template — a
   flat TAB-delimited sheet (no `[Header]`/`SheetType`), a different style from the
   sectioned omnibus sheets, whose column set/order varies between studies.

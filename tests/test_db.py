@@ -11,7 +11,7 @@ from pathlib import Path
 
 from typing import get_args
 
-from run_preflight.constants import PlatformSpecificSampleKind
+from run_preflight.constants import PLATFORM_ILLUMINA, PlatformSpecificSampleKind
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
     ERR_CATEGORY_MISSING_ACCESSION,
@@ -1111,6 +1111,41 @@ class TestSampleKindNamingConvention(unittest.TestCase):
         }
         self.assertEqual(reported, {"pacbio", "illumina"})
         self.assertTrue(reported.issubset(set(valid_kinds)))
+
+
+class TestPlatformRunConfigPairing(unittest.TestCase):
+    """A run's platform and its platform-specific run-config table agree."""
+
+    def test_illumina_run_paired_with_platform(self):
+        # Covers every load path at once, sectioned and flat alike: a loader
+        # that records an Illumina run without its illumina_run row yields a
+        # database claiming a platform it holds no configuration for, and a
+        # loader that attaches one to a PacBio run is equally wrong.
+        loaded: dict[str, tuple[str, int]] = {}
+        for legacy_path in sorted(DATA_DIR.glob("good_*")):
+            conn = load_legacy_csv(str(legacy_path))
+            try:
+                platform = conn.execute(
+                    "SELECT sp.name FROM processing_run pr "
+                    "JOIN sequencing_platform sp ON pr.platform_idx = sp.platform_idx"
+                ).fetchone()[0]
+                run_config_rows = conn.execute(
+                    "SELECT count(*) FROM illumina_run"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            loaded[legacy_path.name] = (platform, run_config_rows)
+
+        # Every Illumina run carries exactly one illumina_run row; no other
+        # platform carries any. Collect the offenders rather than comparing
+        # whole mappings, so a failure names the sheets at fault instead of
+        # printing a diff of every sheet that loaded correctly.
+        violations = {
+            name: (platform, run_config_rows)
+            for name, (platform, run_config_rows) in loaded.items()
+            if run_config_rows != (1 if platform == PLATFORM_ILLUMINA else 0)
+        }
+        self.assertEqual(violations, {})
 
 
 if __name__ == "__main__":

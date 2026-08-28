@@ -292,7 +292,7 @@ var SCHEMA = {
         {
           "name": "bioproject_accession",
           "type": "TEXT",
-          "note": "NCBI BioProject accession A project is identified by external_project_id, bioproject_accession, or both"
+          "note": "NCBI BioProject accession"
         }
       ]
     },
@@ -361,11 +361,12 @@ var SCHEMA = {
         {
           "name": "do_not_use",
           "type": "BOOLEAN",
-          "note": "TRUE excludes the sample (and all its preps) from default fetches physical matrix/tube barcode (nullable"
+          "note": "TRUE excludes the sample (and all its preps) from default fetches"
         },
         {
           "name": "matrix_tube_id",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "physical matrix/tube barcode, nullable; the amplicon prep template's TubeCode. Per-sample, so it lives here rather than on katharoseq_sample. Appended last to match the ADD COLUMN patch (003) that brings v0 forward."
         }
       ]
     },
@@ -415,16 +416,17 @@ var SCHEMA = {
         {
           "name": "legacy_format_idx",
           "type": "INTEGER",
-          "fk": "legacy_samplesheet_format"
+          "fk": "legacy_samplesheet_format",
+          "note": "NULL for native DB-originated runs; non-NULL for ingested legacy files"
         },
         {
           "name": "external_run_id",
-          "type": "TEXT",
-          "note": "ordered tab-joined header of a flat prep template, so it reconstructs in the sheet's own column order (NULL for non-flat runs). Appended last to match the ADD COLUMN patch (004)."
+          "type": "TEXT"
         },
         {
           "name": "flat_column_order",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "ordered tab-joined header of a flat prep template, so it reconstructs in the sheet's own column order (NULL for non-flat runs). Appended last to match the ADD COLUMN patch (004)."
         }
       ]
     },
@@ -505,7 +507,8 @@ var SCHEMA = {
         },
         {
           "name": "read2_length",
-          "type": "INTEGER"
+          "type": "INTEGER",
+          "note": "both NULL when the source document records no run configuration, as the flat amplicon prep template does not"
         },
         {
           "name": "reverse_complement",
@@ -617,16 +620,17 @@ var SCHEMA = {
         },
         {
           "name": "syndna_is_twisted",
-          "type": "BOOLEAN",
-          "note": "On-disk SMRT Cell well folder name (e.g. 1_B01"
+          "type": "BOOLEAN"
         },
         {
           "name": "smrt_cell_well_sample_id",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "On-disk SMRT Cell well folder name, e.g. 1_B01. Revio wells are column 01 only (A01-D01), so _02 and higher are invalid per page 28 of SMRT-Link-v25.2-user-guide.pdf."
         },
         {
           "name": "movie_context_id",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "Full movie context, e.g. m84137_260702_104358_s3. Its format varies across instrument and software, so it is intentionally unconstrained."
         }
       ]
     },

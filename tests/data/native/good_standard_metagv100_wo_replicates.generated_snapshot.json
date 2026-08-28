@@ -1407,7 +1407,7 @@
           1,
           "read1_length",
           "INTEGER",
-          1,
+          0,
           null,
           0
         ],
@@ -1415,7 +1415,7 @@
           2,
           "read2_length",
           "INTEGER",
-          1,
+          0,
           null,
           0
         ],
@@ -1473,8 +1473,8 @@
         "forward_adapter TEXT",
         "mask_short_reads TEXT",
         "override_cycles TEXT",
-        "read1_length INTEGER NOT NULL",
-        "read2_length INTEGER NOT NULL",
+        "read1_length INTEGER",
+        "read2_length INTEGER",
         "reverse_adapter TEXT",
         "reverse_complement BOOLEAN",
         "run_idx INTEGER PRIMARY KEY REFERENCES processing_run(run_idx)"
@@ -2653,6 +2653,7 @@
     "tellseq_sample_barcode_invariance": "CREATE TRIGGER tellseq_sample_barcode_invariance BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE existing.prepped_sample_idx = NEW.prepped_sample_idx AND existing.barcode_id != NEW.barcode_id ) THEN RAISE(ABORT, 'tellseq_sample barcode_id must be identical across rows sharing prepped_sample_idx') END; END",
     "tellseq_sample_lane_uniformity": "CREATE TRIGGER tellseq_sample_lane_uniformity BEFORE INSERT ON tellseq_sample FOR EACH ROW BEGIN SELECT CASE WHEN EXISTS ( SELECT 1 FROM tellseq_sample existing WHERE (existing.lane IS NULL) != (NEW.lane IS NULL) ) THEN RAISE(ABORT, 'tellseq_sample lane must be uniformly NULL or uniformly non-NULL within a database') END; END"
   },
+  "user_version": 5,
   "views": {
     "control_project_associations": "CREATE VIEW control_project_associations AS SELECT s.input_sample_idx, s.sample_name, st.name AS control_type, pp.project_idx, p.project_name, p.external_project_id FROM input_sample s JOIN sample_type st ON s.sample_type_idx = st.sample_type_idx JOIN input_plate_projects pp ON s.input_plate_idx = pp.input_plate_idx JOIN project p ON pp.project_idx = p.project_idx WHERE s.project_idx IS NULL",
     "input_plate_projects": "CREATE VIEW input_plate_projects AS SELECT DISTINCT input_plate_idx, project_idx FROM input_sample WHERE project_idx IS NOT NULL UNION SELECT input_plate_idx, primary_project_idx AS project_idx FROM input_plate",

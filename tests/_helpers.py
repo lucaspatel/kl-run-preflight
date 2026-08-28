@@ -122,6 +122,7 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
     a snapshot and byte-compare it against a later capture.
     """
     snapshot: dict = {
+        "user_version": None,
         "tables": {},
         "indexes": {},
         "triggers": {},
@@ -129,6 +130,10 @@ def capture_db_snapshot(conn: sqlite3.Connection) -> dict:
         "data": {},
     }
     cur = conn.cursor()
+
+    # Schema version: the one piece of structure carried outside sqlite_master,
+    # so a database stale in version alone still differs from a current one
+    snapshot["user_version"] = cur.execute("PRAGMA user_version").fetchone()[0]
 
     # Tables: canonical definition (captures CHECK/COLLATE/table constraints),
     # column structure, foreign keys, and full row contents

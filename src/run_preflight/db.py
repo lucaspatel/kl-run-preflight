@@ -1276,7 +1276,7 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 
     # -- Illumina-specific run config (Reads + Settings + Bioinformatics) ---
     if not is_pacbio:
-        _populate_illumina_run(cur, run_idx, sections, bio_rows)
+        _populate_illumina_run_from_sections(cur, run_idx, sections, bio_rows)
 
     # -- Insert samples -----------------------------------------------------
     # Figure out which column holds the well identifier.
@@ -1406,12 +1406,15 @@ def populate_db(conn: sqlite3.Connection, sections: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
-    """Insert a single illumina_run row for the given processing run.
+def _populate_illumina_run_from_sections(
+    cur, run_idx: int, sections: dict, bio_rows: list
+):
+    """Insert a single illumina_run row from parsed omnibus sections.
 
     Combines data from the Reads, Settings, and Bioinformatics sections to
     populate read lengths, reverse-complement flag, adapter sequences, and
-    other Illumina-specific run configuration.
+    other Illumina-specific run configuration. Callers must have validated
+    the sections before reaching this function.
 
     Args:
         cur: An open SQLite cursor.
@@ -1424,8 +1427,8 @@ def _populate_illumina_run(cur, run_idx: int, sections: dict, bio_rows: list):
     reads = sections.get(SECTION_READS, [])
     settings = sections.get(SECTION_SETTINGS, {})
 
-    read1 = int(reads[0]) if len(reads) > 0 else 0
-    read2 = int(reads[1]) if len(reads) > 1 else 0
+    read1 = int(reads[0])
+    read2 = int(reads[1])
 
     # ReverseComplement is optional in Settings; absent values are stored
     # as NULL so reconstruction NULL-skips and round-trips byte-equal.

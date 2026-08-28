@@ -128,6 +128,10 @@ def populate_amplicon(conn: sqlite3.Connection, rows: list[list[str]]) -> None:
     )
     run_idx = cur.lastrowid
 
+    # The sheet describes an Illumina run, so it gets an illumina_run row; a
+    # prep template records no run configuration, leaving every column NULL.
+    cur.execute("INSERT INTO illumina_run (run_idx) VALUES (?)", (run_idx,))
+
     verbatim_cols = [name for name in header if name not in RECOGNIZED_COLUMNS]
     project_by_name: dict[str, int] = {}
     plate_by_key: dict[tuple[int, str], int] = {}

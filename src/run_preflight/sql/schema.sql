@@ -334,6 +334,7 @@ CREATE TABLE legacy_extra_column (
 -- Core Domain Tables
 -- ============================================================
 
+-- A project is identified by external_project_id, bioproject_accession, or both
 CREATE TABLE project (
     project_idx                      INTEGER PRIMARY KEY AUTOINCREMENT,
     project_name                    TEXT NOT NULL UNIQUE,
@@ -344,7 +345,6 @@ CREATE TABLE project (
     experiment_design_description   TEXT NOT NULL,
     bioproject_accession             TEXT,
         -- NCBI BioProject accession
-    -- A project is identified by external_project_id, bioproject_accession, or both
     CHECK (external_project_id IS NOT NULL OR bioproject_accession IS NOT NULL)
 );
 
@@ -355,6 +355,7 @@ CREATE TABLE input_plate (
     elution_vol         REAL
 );
 
+-- A sample is identified by sample_name, biosample_accession, or both
 CREATE TABLE input_sample (
     input_sample_idx     INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_name         TEXT,
@@ -367,11 +368,10 @@ CREATE TABLE input_sample (
         -- NCBI BioSample accession
     do_not_use          BOOLEAN NOT NULL DEFAULT 0,
         -- TRUE excludes the sample (and all its preps) from default fetches
-    -- physical matrix/tube barcode (nullable); the amplicon prep template's
-    -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
-    -- Appended last to match the ADD COLUMN patch (003) that brings v0 forward.
     matrix_tube_id      TEXT,
-    -- A sample is identified by sample_name, biosample_accession, or both
+        -- physical matrix/tube barcode, nullable; the amplicon prep template's
+        -- TubeCode. Per-sample, so it lives here rather than on katharoseq_sample.
+        -- Appended last to match the ADD COLUMN patch (003) that brings v0 forward.
     CHECK (sample_name IS NOT NULL OR biosample_accession IS NOT NULL)
 );
 
@@ -385,14 +385,13 @@ CREATE TABLE processing_run (
     platform_idx         INTEGER NOT NULL REFERENCES sequencing_platform(platform_idx),
     compression_plate_name TEXT,
     description         TEXT DEFAULT '',
-    legacy_format_idx    INTEGER
-        REFERENCES legacy_samplesheet_format(legacy_format_idx),
+    legacy_format_idx    INTEGER REFERENCES legacy_samplesheet_format(legacy_format_idx),
         -- NULL for native DB-originated runs; non-NULL for ingested legacy files
     external_run_id            TEXT,
-    -- ordered tab-joined header of a flat prep template, so it reconstructs in
-    -- the sheet's own column order (NULL for non-flat runs). Appended last to
-    -- match the ADD COLUMN patch (004).
     flat_column_order          TEXT
+        -- ordered tab-joined header of a flat prep template, so it reconstructs in
+        -- the sheet's own column order (NULL for non-flat runs). Appended last to
+        -- match the ADD COLUMN patch (004).
 );
 
 
@@ -427,8 +426,10 @@ CREATE TABLE prepped_sample (
 
 CREATE TABLE illumina_run (
     run_idx              INTEGER PRIMARY KEY REFERENCES processing_run(run_idx),
-    read1_length        INTEGER NOT NULL,
-    read2_length        INTEGER NOT NULL,
+    read1_length        INTEGER,
+    read2_length        INTEGER,
+        -- both NULL when the source document records no run configuration,
+        -- as the flat amplicon prep template does not
     reverse_complement  BOOLEAN,
     mask_short_reads    TEXT,
     override_cycles     TEXT,
@@ -480,13 +481,13 @@ CREATE TABLE pacbio_sample (
     barcode_id              TEXT NOT NULL,
     twist_adaptor_id        TEXT,
     syndna_is_twisted       BOOLEAN,
-    -- On-disk SMRT Cell well folder name (e.g. 1_B01); Revio wells are
-    -- column 01 only (A01-D01), so _02 and higher are invalid per page 28
-    -- of SMRT-Link-v25.2-user-guide.pdf.
     smrt_cell_well_sample_id TEXT CHECK (smrt_cell_well_sample_id GLOB '[12]_[A-D]01'),
-    -- Full movie context (e.g. m84137_260702_104358_s3); its format varies
-    -- across instrument and software, so it is intentionally unconstrained.
+        -- On-disk SMRT Cell well folder name, e.g. 1_B01. Revio wells are
+        -- column 01 only (A01-D01), so _02 and higher are invalid per page 28
+        -- of SMRT-Link-v25.2-user-guide.pdf.
     movie_context_id        TEXT
+        -- Full movie context, e.g. m84137_260702_104358_s3. Its format varies
+        -- across instrument and software, so it is intentionally unconstrained.
 );
 
 -- ============================================================
