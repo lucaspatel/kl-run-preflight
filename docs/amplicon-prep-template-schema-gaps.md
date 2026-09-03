@@ -8,7 +8,7 @@ span six real layouts (26–43 columns).
 The parser is **header-driven**: it accepts whatever columns a sheet has, types
 the ones it recognises into their schema homes, and keeps the rest **verbatim** in
 `legacy_extra_column`. Nothing is stored twice. The sheet's column order is
-persisted on `processing_run.flat_column_order`, so it reconstructs byte-exactly.
+persisted on `processing_run.source_column_order`, so it reconstructs byte-exactly.
 Consumers use the package API, never the tables directly, so this internal split
 is private and can be restructured later without data loss.
 

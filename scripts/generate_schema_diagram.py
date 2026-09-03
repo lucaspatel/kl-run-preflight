@@ -51,7 +51,6 @@ CATEGORIES: dict[str, dict] = {
             "illumina_sample",
             "tellseq_sample",
             "pacbio_sample",
-            "amplicon_sample",
         ],
         "x": 720,
         "color": "#f778ba",
@@ -59,8 +58,10 @@ CATEGORIES: dict[str, dict] = {
     "workflow": {
         "label": "Workflow",
         "tables": [
+            "amplicon_run",
             "metagenomic_absquant_sample",
             "metatranscriptomic_sample",
+            "amplicon_sample",
             "katharoseq_sample",
         ],
         "x": 1020,

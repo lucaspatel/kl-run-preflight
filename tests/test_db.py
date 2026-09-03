@@ -11,7 +11,11 @@ from pathlib import Path
 
 from typing import get_args
 
-from run_preflight.constants import PLATFORM_ILLUMINA, PlatformSpecificSampleKind
+from run_preflight.constants import (
+    PLATFORM_ILLUMINA,
+    SECTION_DATA,
+    PlatformSpecificSampleKind,
+)
 from run_preflight.db import (
     ERR_CATEGORY_INVARIANT,
     ERR_CATEGORY_MISSING_ACCESSION,
@@ -28,6 +32,7 @@ from run_preflight.db import (
     get_pacbio_sample_info,
     get_projects_missing_external_id,
     get_run_projects,
+    get_view_columns,
     sample_kind_names,
 )
 from run_preflight.legacy.api import load_legacy_csv
@@ -1146,6 +1151,144 @@ class TestPlatformRunConfigPairing(unittest.TestCase):
             if run_config_rows != (1 if platform == PLATFORM_ILLUMINA else 0)
         }
         self.assertEqual(violations, {})
+
+
+class TestSectionFormatConsistency(unittest.TestCase):
+    """One section name never carries two different section formats."""
+
+    def test_section_format_is_single_valued_per_section_name(self):
+        # get_section_formats folds the whole registry into one
+        # {section_name: section_format} dict before any format is known, so a
+        # section name registered with two formats would resolve by row order
+        # and silently change how every other format's file is parsed.
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT section_name, section_format "
+                "FROM legacy_samplesheet_view "
+                "GROUP BY section_name, section_format"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        # Collect the offending section names with the formats they conflict
+        # over, so a failure names them instead of printing the whole registry.
+        formats_by_section: dict[str, set[str]] = {}
+        for section_name, section_format in rows:
+            formats_by_section.setdefault(section_name, set()).add(section_format)
+        conflicts = {
+            name: sorted(formats)
+            for name, formats in formats_by_section.items()
+            if len(formats) > 1
+        }
+        self.assertEqual(conflicts, {})
+
+
+class TestRegistryLoadConfig(unittest.TestCase):
+    """Every registered format declares how a file of it loads."""
+
+    def test_every_format_declares_platform_and_instrument(self):
+        # A row missing either value cannot be loaded at all, and the loader
+        # has no inference left to fall back on.
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT legacy_sheet_type, legacy_version, platform_idx, "
+                "default_instrument_type FROM legacy_samplesheet_format"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        # Name the offending formats rather than diffing the whole registry.
+        incomplete = {
+            f"{sheet_type} v{version}": (platform_idx, instrument)
+            for sheet_type, version, platform_idx, instrument in rows
+            if platform_idx is None or instrument is None
+        }
+        self.assertEqual(incomplete, {})
+
+    def test_every_platform_idx_resolves(self):
+        conn = create_db(":memory:")
+        try:
+            unresolved = conn.execute(
+                "SELECT f.legacy_sheet_type, f.legacy_version FROM "
+                "legacy_samplesheet_format f LEFT JOIN sequencing_platform sp "
+                "ON f.platform_idx = sp.platform_idx WHERE sp.platform_idx IS NULL"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual([f"{s} v{v}" for s, v in unresolved], [])
+
+    def test_every_sample_kind_names_a_real_table(self):
+        # NULL is legitimate — it means the format has no platform-specific
+        # per-sample rows — but any non-NULL value must be a declared kind
+        # whose table exists.
+        valid_kinds = get_args(PlatformSpecificSampleKind)
+        conn = create_db(":memory:")
+        try:
+            rows = conn.execute(
+                "SELECT legacy_sheet_type, legacy_version, sample_kind "
+                "FROM legacy_samplesheet_format WHERE sample_kind IS NOT NULL"
+            ).fetchall()
+            bad = {}
+            for sheet_type, version, kind in rows:
+                if kind not in valid_kinds:
+                    bad[f"{sheet_type} v{version}"] = f"{kind!r} is not a declared kind"
+                    continue
+                table = sample_kind_names(kind).table
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+                    (table,),
+                ).fetchone()
+                if exists is None:
+                    bad[f"{sheet_type} v{version}"] = f"missing table {table}"
+        finally:
+            conn.close()
+        self.assertEqual(bad, {})
+
+    def test_every_declared_role_column_exists_in_the_data_view(self):
+        # The loader reads Data by these names, so a name the format's own view
+        # does not emit is a KeyError at load time. Failing here instead names
+        # the format and the column.
+        conn = create_db(":memory:")
+        try:
+            formats = conn.execute(
+                "SELECT f.legacy_sheet_type, f.legacy_version, lv.view_name, "
+                " f.sample_name_column, f.plate_column, f.project_column, "
+                " f.well_description_column, f.well_column "
+                "FROM legacy_samplesheet_format f "
+                "JOIN legacy_samplesheet_view lv "
+                "  ON f.legacy_format_idx = lv.legacy_format_idx "
+                "WHERE lv.section_name = ?",
+                (SECTION_DATA,),
+            ).fetchall()
+            cur = conn.cursor()
+            missing = {}
+            for sheet_type, version, view_name, *role_columns in formats:
+                view_columns = set(get_view_columns(cur, view_name))
+                absent = sorted(set(role_columns) - view_columns)
+                if absent:
+                    missing[f"{sheet_type} v{version}"] = absent
+        finally:
+            conn.close()
+        self.assertEqual(missing, {})
+
+    def test_only_pre_v101_standard_metag_disallows_replicates(self):
+        # The flag replaces a bare version comparison, which was only
+        # meaningful within one format family. Asserting the exact set keeps a
+        # future format from silently inheriting the restriction or escaping it.
+        conn = create_db(":memory:")
+        try:
+            unsupported = conn.execute(
+                "SELECT legacy_sheet_type || ' v' || legacy_version "
+                "FROM legacy_samplesheet_format WHERE replicates_supported = 0"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(
+            sorted(name for (name,) in unsupported),
+            ["standard_metag v0", "standard_metag v100", "standard_metag v90"],
+        )
 
 
 if __name__ == "__main__":

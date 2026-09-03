@@ -39,8 +39,8 @@ class TestAmpliconSample(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def test_one_amplicon_sample_per_prepped_sample(self):
-        """amplicon_sample.prepped_sample_idx is UNIQUE: a prepped_sample carries
-        exactly one Golay barcode."""
+        """prepped_sample_idx is amplicon_sample's primary key: a prepped_sample
+        carries exactly one Golay barcode."""
         with open_db(self.db_path) as conn:
             proj = seed_project(conn, bioproject_accession="PRJNA1")
             plate = seed_plate(conn, proj)

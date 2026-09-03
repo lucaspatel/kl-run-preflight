@@ -22,7 +22,7 @@ from run_preflight.db import get_preflight_data_facts
 _DATA_DIR = Path(__file__).parent / "data"
 LEGACY_DATA_DIR = _DATA_DIR / "legacy"
 NATIVE_DATA_DIR = _DATA_DIR / "native"
-GOOD_LEGACY_GLOB = "good_*.csv"
+GOOD_LEGACY_GLOB = "good_*"
 NATIVE_SNAPSHOT_SUFFIX = ".generated_snapshot.json"
 
 # Content-derived fact tokens marking populated post-preflight data. A true
@@ -468,7 +468,7 @@ def seed_amplicon_sample(
     *,
     barcode: str = "ACGTACGTACGT",
 ) -> int:
-    """Insert one amplicon_sample row; return amplicon_sample_idx."""
+    """Insert one amplicon_sample row; return its prepped_sample_idx."""
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO amplicon_sample (prepped_sample_idx, barcode) VALUES (?, ?)",
