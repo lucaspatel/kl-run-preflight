@@ -327,6 +327,7 @@ until the first release is tagged.
 
 ### Changed
 
+- Raised the supported Python floor to 3.11.
 - Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
   `tests/data/native/` (native SQLite files and snapshots); renamed four
   real-world-named good CSVs to the `good_` convention and the
@@ -368,6 +369,14 @@ until the first release is tagged.
 
 ### Fixed
 
+- CI lint enforces a stated ruff rule set (`E4`, `E7`, `E9`, `F`) rather than
+  inheriting ruff's implicit default, which shifts between ruff releases and so
+  silently changed what CI required from one run to the next.
+- The CI Python matrix exercises the versions it names. The workflow's
+  interpreter pin rewrote only a literal `python=3.9` entry, which the unpinned
+  `python` in `environment.yml` did not match, so the substitution was a no-op
+  and every matrix job installed the same interpreter. The rewrite now matches a
+  pinned or unpinned entry and fails loudly when it does not take.
 - Schema patch files under `sql/patches/` are now included in the built
   package, so migrations apply from an installed wheel rather than only from an
   editable checkout.
