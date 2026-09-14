@@ -29,46 +29,44 @@ until the first release is tagged.
 - **A format declares whether its replicate well semantics round-trip**
   (`replicates_supported`, schema patch `002`). The loader previously rejected
   replicates by comparing a bare version number against 101, which is only
-  meaningful inside one format family — amplicon v1/v2/v3 sort below it while
-  being unrelated to `standard_metag` v0/v90/v100. Only those three declare 0,
+  meaningful inside one format family — amplicon v1 sorts below it while being
+  unrelated to `standard_metag` v0/v90/v100. Only those three declare 0,
   asserted exactly by a guard test.
 
 - **A format declares which Data column holds each fact the loader needs**
   (schema patch `002`): `sample_name_column`, `plate_column`, `project_column`,
   `well_description_column`, and `well_column` on `legacy_samplesheet_format`.
   The defaults are the omnibus vocabulary that all fourteen omnibus formats
-  share, so only the amplicon formats override them; the well column genuinely
+  share, so only the amplicon format overrides them; the well column genuinely
   varies across the omnibus formats and is stated on every row. A guard test
   fails, naming the format and column, if a declared name is absent from that
   format's own Data view.
 
 - **The legacy format registry declares how each format loads** (schema patch
-  `008`). `legacy_samplesheet_format` gains `platform_idx`,
+  `002`). `legacy_samplesheet_format` gains `platform_idx`,
   `default_instrument_type`, and `sample_kind` — the platform a file of that
   format describes, the instrument to record when the file states none, and
   which `<kind>_sample` table holds its per-sample rows. `sample_kind` is NULL
-  for the amplicon formats, which have no platform-specific sample rows: an
+  for the amplicon format, which has no platform-specific sample rows: an
   amplicon run carries a single in-line Golay barcode, not an i5/i7 pair. A
   guard test fails, naming the format, if any row is incomplete or names a
   kind with no table.
 
-- **The three amplicon prep-template layouts are registered formats.** The
-  single placeholder `amplicon` row is replaced by `amplicon` v1, v2, and v3
-  (schema patch `002`), each with its sections and reconstruction views. The
-  layouts form a chain: v1 carries no run metadata, v2 adds it, and v3 adds the
-  tube and plate tier while splitting the well into its 96- and 384-well
-  positions — so v1 and v2 spell the 384-well position `well_id` and v3 spells
-  it `well_id_384`. v3 declares `Kathseq_RackID` and `number_of_cells` as an
-  optional column group. Each format is TAB-delimited and carries no
-  `[Section]` label lines, so it writes exactly one section; the Header,
+- **The amplicon prep-template layout is a registered format.** The single
+  placeholder `amplicon` row becomes `amplicon` v1 (schema patch `002`), with
+  its sections and reconstruction view. The layout carries the tube and plate
+  tier and splits the well into its 96- and 384-well positions
+  (`well_id_384` / `well_id_96`), and declares `Kathseq_RackID` and
+  `number_of_cells` as an optional column group. It is TAB-delimited and carries
+  no `[Section]` label lines, so it writes exactly one section; the Header,
   Bioinformatics, Contact, and SampleContext registrations describe facts the
   sheet denormalizes across its Data columns, and are validated on load but
   never written back out.
-- **Amplicon prep templates now have committed native fixtures.** The
+- **The amplicon prep template has a committed native fixture.** The
   native-fixture guards previously covered only `good_*.csv`; they now cover
-  every `good_*` legacy sheet, so the five amplicon layouts each carry a
-  committed `.sqlite` and snapshot subject to the same coverage, pairing,
-  consistency, correctness, and labelling invariants as the omnibus sheets.
+  every `good_*` legacy sheet, so the amplicon layout carries a committed
+  `.sqlite` and snapshot subject to the same coverage, pairing, consistency,
+  correctness, and labelling invariants as the omnibus sheets.
 
 - **`amplicon_run` holds the amplicon facts that are constant across a run**
   (schema patch `002`): `primer`, `linker`, `target_gene`, `target_subfragment`,
@@ -105,21 +103,20 @@ until the first release is tagged.
 ### Changed
 
 - **Prep-template facts land in typed homes rather than a verbatim store.**
-  Loading the amplicon fixtures previously produced 8,064–13,056
-  `legacy_extra_column` rows apiece, because only nine columns were typed;
-  that is now 3,072–5,760, with run-constant facts on `amplicon_run`,
+  The prep template previously typed only nine columns, keeping the rest in
+  `legacy_extra_column`; run-constant facts now live on `amplicon_run`,
   plate-constant facts on `input_plate`, the 96-well position on
   `input_sample.well`, the tube barcode on `input_sample.matrix_tube_id`, and
-  the Golay barcode on `amplicon_sample`.
+  the Golay barcode on `amplicon_sample`, leaving only the genuinely free-form
+  columns verbatim.
 
-- **KatharoSeq controls are recognised whatever their capitalisation.** The
-  previous rule matched `"KATHARO."` case-sensitively, so the 12 controls in
-  the sheet that writes `katharo.` in lower case were typed as ordinary
-  samples. They now type correctly and carry their rack and cell count on
-  `katharoseq_sample`, where there were none before. Matching is otherwise
+- **KatharoSeq and blank controls are typed from their name prefix,
+  case-insensitively.** A `KATHARO.` / `BLANK.` prefix types the control
+  whatever its capitalisation; when the sheet also carries `Kathseq_RackID` and
+  `number_of_cells`, those land on `katharoseq_sample`. Matching is otherwise
   literal: a name such as `BLANK2.2A` is deliberately not treated as a blank,
-  because whether a numbered prefix marks one is a question about that
-  sheet's convention rather than something the loader should infer.
+  because whether a numbered prefix marks one is a question about that sheet's
+  convention rather than something the loader should infer.
 
 - **A sheet whose `control_description` disagrees with its sample names is
   rejected at load.** The Data view regenerates that column from the sample
@@ -184,12 +181,8 @@ until the first release is tagged.
   elsewhere.
 
 - **`katharoseq_sample.number_of_cells` is `REAL`, not `INTEGER`** (schema patch
-  `006`). KatharoSeq serial dilutions reach fractional cell counts — `38.4` and
+  `002`). KatharoSeq serial dilutions reach fractional cell counts — `38.4` and
   `7.68` both occur in real prep templates — which `INTEGER` silently truncated.
-
-- **`processing_run.flat_column_order` is now `source_column_order`.** The column
-  records a source sheet's own column order so it reconstructs exactly; nothing
-  about that is specific to flat sheets.
 
 - **Every Illumina run now has an `illumina_run` record.** A run loaded from the
   amplicon prep template is sequenced on Illumina but the prep template
@@ -201,7 +194,7 @@ until the first release is tagged.
   A guard test loads every legacy sheet — sectioned and flat — and fails if any
   run's platform and its run-config table disagree.
 - **`illumina_run.read1_length` / `read2_length` are nullable** (schema patch
-  `005`), so a run whose source document omits read lengths can still carry an
+  `002`), so a run whose source document omits read lengths can still carry an
   `illumina_run` row. NULL expresses "not recorded", which `0` cannot. The patch
   rebuilds the table, since SQLite cannot drop `NOT NULL` in place, dropping and
   recreating the four dependent views around the rebuild.
@@ -210,25 +203,6 @@ until the first release is tagged.
   piece of structure held outside `sqlite_master`. A database stale in version
   alone compared equal, and the version bump behind a fixture regeneration was
   invisible in review. `capture_db_snapshot` now captures it.
-- **EMP amplicon prep-template support.** Adds the EMP amplicon prep template — a
-  flat TAB-delimited sheet (no `[Header]`/`SheetType`), a different style from the
-  sectioned omnibus sheets, whose column set/order varies between studies.
-  `legacy/flat.py` is **header-driven**: it accepts whatever columns a sheet has,
-  types the ones it recognises into their schema homes, keeps the rest verbatim in
-  the existing `legacy_extra_column`, and reconstructs in the sheet's own column
-  order (persisted on `processing_run.source_column_order`, patch `002`) —
-  **byte-exact**, reachable through the same public entrypoints as the other
-  formats (`open_file`/`load_legacy_csv`/`save_legacy_csv`), registered as
-  `amplicon` v1 (patch `002`). Recognised columns: the Golay barcode → the new
-  `amplicon_sample` table (one per prepped_sample), `vol_extracted_elution_ul` →
-  `input_plate.elution_vol`, `sample_name`/`well`/`sample_plate`/`project_name`/
-  etc. → their existing tables, and blank/KatharoSeq → `input_sample.sample_type`
-  from the `BLANK.`/`KATHARO.` name prefix. Nothing is stored twice. A
-  `get_amplicon_barcode_roster` reader returns the per-sample `(sample_name,
-  biosample_accession, barcode, barcodes_are_rc, sample_type)` a demux consumer
-  needs (not accession-gated). Round-trip fixtures cover six real layouts (26–43
-  columns) from kl-metapool. See `docs/amplicon-prep-template-schema-gaps.md` for
-  the column→schema mapping and open normalization questions.
 - **`input_sample.matrix_tube_id`** (nullable) — the physical matrix/tube barcode,
   moved off `katharoseq_sample.tube_code` since it is a per-sample fact, not
   KatharoSeq-specific (schema patch `002`).

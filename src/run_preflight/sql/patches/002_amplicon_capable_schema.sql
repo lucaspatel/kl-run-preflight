@@ -149,14 +149,6 @@ INSERT INTO legacy_samplesheet_format
     VALUES (15, 'amplicon', 1, char(9), 0,
             (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
             'Unknown', NULL, 'sample_name', 'sample_plate', 'project_name',
-            'well_description', 'well_id'),
-           (16, 'amplicon', 2, char(9), 0,
-            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
-            'Unknown', NULL, 'sample_name', 'sample_plate', 'project_name',
-            'well_description', 'well_id'),
-           (17, 'amplicon', 3, char(9), 0,
-            (SELECT platform_idx FROM sequencing_platform WHERE name = 'Illumina'),
-            'Unknown', NULL, 'sample_name', 'sample_plate', 'project_name',
             'well_description', 'well_id_384');
 
 INSERT INTO legacy_samplesheet_view VALUES
@@ -164,20 +156,10 @@ INSERT INTO legacy_samplesheet_view VALUES
     (15, 'Data',           2, 'amplicon_v1_data',        'tabular'),
     (15, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
     (15, 'Contact',        4, 'omnibus_contact',         'tabular'),
-    (15, 'SampleContext',  5, 'amplicon_sample_context', 'tabular'),
-    (16, 'Header',         1, 'amplicon_header',         'header_kv'),
-    (16, 'Data',           2, 'amplicon_v2_data',        'tabular'),
-    (16, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
-    (16, 'Contact',        4, 'omnibus_contact',         'tabular'),
-    (16, 'SampleContext',  5, 'amplicon_sample_context', 'tabular'),
-    (17, 'Header',         1, 'amplicon_header',         'header_kv'),
-    (17, 'Data',           2, 'amplicon_v3_data',        'tabular'),
-    (17, 'Bioinformatics', 3, 'amplicon_bioinformatics', 'tabular'),
-    (17, 'Contact',        4, 'omnibus_contact',         'tabular'),
-    (17, 'SampleContext',  5, 'amplicon_sample_context', 'tabular');
+    (15, 'SampleContext',  5, 'amplicon_sample_context', 'tabular');
 
 INSERT INTO legacy_samplesheet_optional_columns VALUES
-    (17, 'Data', 'katharoseq',
+    (15, 'Data', 'katharoseq',
      'Kathseq_RackID,number_of_cells',
      'check_contains_katharoseq', NULL);
 
@@ -230,9 +212,7 @@ CREATE VIEW omnibus_standard_metag_v101_bioinformatics AS
 -- ============================================================
 
 -- Shared base carrying every typed prep-template column with the joins resolved
--- once; the per-version views project the subset their layout spells. The
--- compression well appears under both header names the layouts use, so each
--- version view selects the spelling its own sheet carries.
+-- once; the amplicon_v1_data view projects the subset the sheet spells.
 CREATE VIEW amplicon_data_base AS
     SELECT cs.run_idx,
         prs.prepped_sample_idx,
@@ -253,7 +233,6 @@ CREATE VIEW amplicon_data_base AS
         ins.sample_name AS "orig_name",
         prs.well_description AS "well_description",
         p.library_construction_protocol AS "library_construction_protocol",
-        cs.compression_well AS "well_id",
         cs.compression_well AS "well_id_384",
         ins.well AS "well_id_96",
         ip.plate_contents_description AS "experiment_design_description",
@@ -282,30 +261,10 @@ CREATE VIEW amplicon_data_base AS
     JOIN project p ON psp.project_idx = p.project_idx
     LEFT JOIN katharoseq_sample ks ON ins.input_sample_idx = ks.input_sample_idx;
 
--- v1: the narrowest layout. Carries no run metadata and spells the 384-well
--- position "well_id".
+-- v1: the amplicon prep-template layout. Carries the tube and plate tier and
+-- splits the well into its 96- and 384-well positions. Kathseq_RackID and
+-- number_of_cells are optional (see legacy_samplesheet_optional_columns).
 CREATE VIEW amplicon_v1_data AS
-    SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
-        "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
-        "plating", "extractionkit_lot", "extraction_robot", "sample_plate",
-        "project_name", "orig_name", "well_description",
-        "library_construction_protocol", "well_id"
-    FROM amplicon_data_base;
-
--- v2: v1 plus plate contents and the run's instrument and identifier.
-CREATE VIEW amplicon_v2_data AS
-    SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
-        "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
-        "plating", "extractionkit_lot", "extraction_robot", "sample_plate",
-        "project_name", "orig_name", "well_description",
-        "library_construction_protocol", "well_id",
-        "experiment_design_description", "instrument_model", "runid"
-    FROM amplicon_data_base;
-
--- v3: adds the tube and plate tier and splits the well into its 96- and
--- 384-well positions, so it spells the latter "well_id_384". Kathseq_RackID
--- and number_of_cells are optional (see legacy_samplesheet_optional_columns).
-CREATE VIEW amplicon_v3_data AS
     SELECT run_idx, prepped_sample_idx, "sample_name", "barcode", "primer", "linker", "pcr_primers",
         "sequencing_meth", "target_gene", "target_subfragment", "primer_plate",
         "plating", "extractionkit_lot", "extraction_robot", "sample_plate",

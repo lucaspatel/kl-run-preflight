@@ -999,7 +999,7 @@ var SCHEMA = {
     },
     {
       "id": "amplicon_data_base",
-      "note": "Shared base carrying every typed prep-template column with the joins resolved once; the per-version views project the subset their layout spells. The compression well appears under both header names the layouts use, so each version view selects the spelling its own sheet carries."
+      "note": "Shared base carrying every typed prep-template column with the joins resolved once; the amplicon_v1_data view projects the subset the sheet spells."
     },
     {
       "id": "amplicon_header",
@@ -1011,15 +1011,7 @@ var SCHEMA = {
     },
     {
       "id": "amplicon_v1_data",
-      "note": "v1: the narrowest layout. Carries no run metadata and spells the 384-well position \"well_id\"."
-    },
-    {
-      "id": "amplicon_v2_data",
-      "note": "v2: v1 plus plate contents and the run's instrument and identifier."
-    },
-    {
-      "id": "amplicon_v3_data",
-      "note": "v3: adds the tube and plate tier and splits the well into its 96- and 384-well positions, so it spells the latter \"well_id_384\". Kathseq_RackID and number_of_cells are optional (see legacy_samplesheet_optional_columns)."
+      "note": "v1: the amplicon prep-template layout. Carries the tube and plate tier and splits the well into its 96- and 384-well positions. Kathseq_RackID and number_of_cells are optional (see legacy_samplesheet_optional_columns)."
     },
     {
       "id": "control_project_associations",
@@ -1202,41 +1194,39 @@ var VIEW_POSITIONS = {
   'amplicon_header': { x: 600, y: 1462 },
   'amplicon_sample_context': { x: 880, y: 1462 },
   'amplicon_v1_data': { x: 1160, y: 1462 },
-  'amplicon_v2_data': { x: 40, y: 1498 },
-  'amplicon_v3_data': { x: 320, y: 1498 },
-  'control_project_associations': { x: 600, y: 1498 },
-  'input_plate_projects': { x: 880, y: 1498 },
-  'omnibus_abs_quant_metag_v10_data': { x: 1160, y: 1498 },
-  'omnibus_contact': { x: 40, y: 1534 },
-  'omnibus_illumina_header': { x: 320, y: 1534 },
-  'omnibus_illumina_reads': { x: 600, y: 1534 },
-  'omnibus_illumina_settings': { x: 880, y: 1534 },
-  'omnibus_pacbio_absquant_v10_data': { x: 1160, y: 1534 },
-  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 40, y: 1570 },
-  'omnibus_pacbio_absquant_v11_data': { x: 320, y: 1570 },
-  'omnibus_pacbio_absquant_v11_header': { x: 600, y: 1570 },
-  'omnibus_pacbio_absquant_v12_data': { x: 880, y: 1570 },
-  'omnibus_pacbio_metag_v10_data': { x: 1160, y: 1570 },
-  'omnibus_pacbio_metag_v11_data': { x: 40, y: 1606 },
-  'omnibus_sample_context': { x: 320, y: 1606 },
-  'omnibus_standard_metag_v0_data': { x: 600, y: 1606 },
-  'omnibus_standard_metag_v101_bioinformatics': { x: 880, y: 1606 },
-  'omnibus_standard_metag_v101_data': { x: 1160, y: 1606 },
-  'omnibus_standard_metag_v90_bioinformatics': { x: 40, y: 1642 },
-  'omnibus_standard_metag_v90_data': { x: 320, y: 1642 },
-  'omnibus_standard_metat_v10_data': { x: 600, y: 1642 },
-  'omnibus_tellseq_absquant_v10_data': { x: 880, y: 1642 },
-  'omnibus_tellseq_metag_v10_data': { x: 1160, y: 1642 },
-  'prepped_sample_name': { x: 40, y: 1678 },
-  'prepped_sample_project': { x: 320, y: 1678 },
-  'replicated_samples': { x: 600, y: 1678 },
-  'run_capability': { x: 880, y: 1678 },
-  'run_capability_absquant_mass': { x: 1160, y: 1678 },
-  'run_capability_absquant_surface_area': { x: 40, y: 1714 },
-  'run_capability_absquant_volume': { x: 320, y: 1714 },
-  'run_derived_capability': { x: 600, y: 1714 },
-  'run_illumina_sample': { x: 880, y: 1714 },
-  'run_pacbio_sample': { x: 1160, y: 1714 }
+  'control_project_associations': { x: 40, y: 1498 },
+  'input_plate_projects': { x: 320, y: 1498 },
+  'omnibus_abs_quant_metag_v10_data': { x: 600, y: 1498 },
+  'omnibus_contact': { x: 880, y: 1498 },
+  'omnibus_illumina_header': { x: 1160, y: 1498 },
+  'omnibus_illumina_reads': { x: 40, y: 1534 },
+  'omnibus_illumina_settings': { x: 320, y: 1534 },
+  'omnibus_pacbio_absquant_v10_data': { x: 600, y: 1534 },
+  'omnibus_pacbio_absquant_v11_bioinformatics': { x: 880, y: 1534 },
+  'omnibus_pacbio_absquant_v11_data': { x: 1160, y: 1534 },
+  'omnibus_pacbio_absquant_v11_header': { x: 40, y: 1570 },
+  'omnibus_pacbio_absquant_v12_data': { x: 320, y: 1570 },
+  'omnibus_pacbio_metag_v10_data': { x: 600, y: 1570 },
+  'omnibus_pacbio_metag_v11_data': { x: 880, y: 1570 },
+  'omnibus_sample_context': { x: 1160, y: 1570 },
+  'omnibus_standard_metag_v0_data': { x: 40, y: 1606 },
+  'omnibus_standard_metag_v101_bioinformatics': { x: 320, y: 1606 },
+  'omnibus_standard_metag_v101_data': { x: 600, y: 1606 },
+  'omnibus_standard_metag_v90_bioinformatics': { x: 880, y: 1606 },
+  'omnibus_standard_metag_v90_data': { x: 1160, y: 1606 },
+  'omnibus_standard_metat_v10_data': { x: 40, y: 1642 },
+  'omnibus_tellseq_absquant_v10_data': { x: 320, y: 1642 },
+  'omnibus_tellseq_metag_v10_data': { x: 600, y: 1642 },
+  'prepped_sample_name': { x: 880, y: 1642 },
+  'prepped_sample_project': { x: 1160, y: 1642 },
+  'replicated_samples': { x: 40, y: 1678 },
+  'run_capability': { x: 320, y: 1678 },
+  'run_capability_absquant_mass': { x: 600, y: 1678 },
+  'run_capability_absquant_surface_area': { x: 880, y: 1678 },
+  'run_capability_absquant_volume': { x: 1160, y: 1678 },
+  'run_derived_capability': { x: 40, y: 1714 },
+  'run_illumina_sample': { x: 320, y: 1714 },
+  'run_pacbio_sample': { x: 600, y: 1714 }
 };
 
 var svg = document.getElementById('canvas');
