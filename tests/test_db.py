@@ -21,11 +21,13 @@ from run_preflight.db import (
     ERR_CATEGORY_MISSING_ACCESSION,
     LABEL_NONSTANDARD_WITH_PROJECT,
     LABEL_STANDARD_NO_PROJECT,
+    AmpliconSampleRow,
     IlluminaSampleRow,
     PacbioSampleRow,
     PlatformSampleInfo,
     _has_do_not_use_token,
     create_db,
+    get_amplicon_sample_info,
     get_illumina_sample_info,
     get_illumina_sample_rows,
     get_input_sample_project_info,
@@ -134,6 +136,39 @@ def _expected_illumina_row(sample_name: str) -> IlluminaSampleRow:
 def _expected_pacbio_row(sample_name: str) -> PacbioSampleRow:
     """Build the PacbioSampleRow _seed_pacbio produces for *sample_name*."""
     return PacbioSampleRow(f"bc_{sample_name}", None, None, None, None)
+
+
+def _seed_amplicon(
+    conn: sqlite3.Connection,
+    plate_idx: int,
+    project_idx: int | None,
+    run_idx: int,
+    *,
+    sample_name: str,
+    well: str,
+    sample_type_name: str = "standard",
+) -> tuple[int, int]:
+    """Seed sample chain + amplicon_sample; return (input_sample_idx, prs_idx).
+
+    amplicon_sample has no surrogate key, so its handle is prepped_sample_idx.
+    """
+    ins_idx, _cs_idx, prs_idx = _helpers.seed_sample_chain(
+        conn,
+        plate_idx,
+        project_idx,
+        run_idx,
+        sample_name=sample_name,
+        sample_type_name=sample_type_name,
+        well=well,
+    )
+    _helpers.seed_amplicon_sample(conn, prs_idx, barcode=f"bc_{sample_name}")
+    conn.commit()
+    return ins_idx, prs_idx
+
+
+def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
+    """Build the AmpliconSampleRow _seed_amplicon produces for *sample_name*."""
+    return AmpliconSampleRow(f"bc_{sample_name}")
 
 
 class TestGetIlluminaSampleInfo(unittest.TestCase):
@@ -1016,6 +1051,148 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         # coercion; assert the concrete types of the surfaced values.
         twisted_types = [type(row.kind_row.syndna_is_twisted) for row in result]
         self.assertEqual(twisted_types, [bool, bool, type(None)])
+
+
+class TestGetAmpliconSampleInfo(unittest.TestCase):
+    """get_amplicon_sample_info wires the shared helper to amplicon_sample.
+
+    Amplicon is not a platform sample kind, so this exercises the source_names
+    generalization: the same accession-resolution path, keyed by
+    prepped_sample_idx, with an AmpliconSampleRow kind_row.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_non_control_single_project(self):
+        # Non-control on a single-project plate: primary = own; secondary = []
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _, prs_idx = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+
+        with open_db(self.db_path) as conn:
+            result = get_amplicon_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                PlatformSampleInfo(
+                    prs_idx,
+                    "standard",
+                    "SAMN001",
+                    "PRJNA001",
+                    [],
+                    _expected_amplicon_row("S1"),
+                )
+            ],
+        )
+
+    def test_control_multi_project(self):
+        # Control on a multi-project plate: secondary lists every non-primary
+        # plate project's bioproject_accession, sorted by accession value.
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession="PRJNA999",
+            )
+            proj3 = _helpers.seed_project(
+                conn,
+                project_name="proj3",
+                external_project_id="3",
+                bioproject_accession="PRJNA111",
+            )
+            _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
+            _helpers.seed_input_sample(conn, plate, proj3, sample_name="S3")
+            _, prs_idx = _seed_amplicon(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            set_biosample_accession(conn, "blank1", "SAMN_BLK")
+
+        with open_db(self.db_path) as conn:
+            result = get_amplicon_sample_info(conn)
+
+        self.assertEqual(
+            result,
+            [
+                PlatformSampleInfo(
+                    prs_idx,
+                    "extraction_blank",
+                    "SAMN_BLK",
+                    "PRJNA001",
+                    ["PRJNA111", "PRJNA999"],
+                    _expected_amplicon_row("blank1"),
+                )
+            ],
+        )
+
+    def test_excludes_do_not_use_by_default(self):
+        # One flagged do-not-use is dropped by default, returned when requested.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            ins1, prs1 = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _, prs2 = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S2", well="A2"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+            set_biosample_accession(conn, "S2", "SAMN002")
+            set_input_sample_do_not_use(conn, input_sample_idx=ins1)
+
+        with open_db(self.db_path) as conn:
+            default_result = get_amplicon_sample_info(conn)
+            full_result = get_amplicon_sample_info(conn, include_do_not_use=True)
+
+        self.assertEqual([r.sample_idx for r in default_result], [prs2])
+        self.assertEqual([r.sample_idx for r in full_result], [prs1, prs2])
+
+    def test_missing_accession_raises(self):
+        # No biosample accession set -> accession-gated reader raises.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            _seed_amplicon(conn, plate, proj, run, sample_name="S1", well="A1")
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_amplicon_sample_info(conn)
+        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, str(ctx.exception))
+        self.assertIn("prepped_sample_idx", str(ctx.exception))
+
+    def test_run_amplicon_sample_exposes_expected_columns(self):
+        with open_db(self.db_path) as conn:
+            cols = [
+                r[1] for r in conn.execute("PRAGMA table_info(run_amplicon_sample)")
+            ]
+        self.assertEqual(
+            cols,
+            [
+                "prepped_sample_idx",
+                "barcode",
+                "run_idx",
+                "input_sample_idx",
+                "sample_name",
+                "do_not_use",
+                "project_name",
+            ],
+        )
 
 
 class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):

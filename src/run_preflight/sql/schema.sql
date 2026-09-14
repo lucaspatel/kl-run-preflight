@@ -909,6 +909,25 @@ CREATE VIEW run_pacbio_sample AS
     JOIN prepped_sample_name psn ON ps.prepped_sample_idx = psn.prepped_sample_idx
     JOIN prepped_sample_project psp ON ps.prepped_sample_idx = psp.prepped_sample_idx;
 
+-- Joins amplicon_sample to its scoping run and input_sample, mirroring
+-- run_pacbio_sample so callers can filter by run_idx without re-deriving the
+-- prepped/compression chain. amplicon_sample has no surrogate key, so
+-- prepped_sample_idx is the per-sample handle.
+CREATE VIEW run_amplicon_sample AS
+    SELECT
+        a.prepped_sample_idx,
+        a.barcode,
+        cs.run_idx,
+        cs.input_sample_idx,
+        psn.sample_name,
+        psn.do_not_use,
+        psp.project_name
+    FROM amplicon_sample a
+    JOIN prepped_sample prs ON a.prepped_sample_idx = prs.prepped_sample_idx
+    JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN prepped_sample_name psn ON a.prepped_sample_idx = psn.prepped_sample_idx
+    JOIN prepped_sample_project psp ON a.prepped_sample_idx = psp.prepped_sample_idx;
+
 -- ============================================================
 -- Omnibus Reconstruction Views — Shared
 -- ============================================================

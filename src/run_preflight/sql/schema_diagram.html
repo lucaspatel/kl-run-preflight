@@ -1118,6 +1118,10 @@ var SCHEMA = {
       "note": "Detects replicated samples (a compression_sample with multiple prepped_wells)"
     },
     {
+      "id": "run_amplicon_sample",
+      "note": "Joins amplicon_sample to its scoping run and input_sample, mirroring run_pacbio_sample so callers can filter by run_idx without re-deriving the prepped/compression chain. amplicon_sample has no surrogate key, so prepped_sample_idx is the per-sample handle."
+    },
+    {
       "id": "run_capability",
       "note": "Union view: \"what can this run do?\""
     },
@@ -1220,13 +1224,14 @@ var VIEW_POSITIONS = {
   'prepped_sample_name': { x: 880, y: 1642 },
   'prepped_sample_project': { x: 1160, y: 1642 },
   'replicated_samples': { x: 40, y: 1678 },
-  'run_capability': { x: 320, y: 1678 },
-  'run_capability_absquant_mass': { x: 600, y: 1678 },
-  'run_capability_absquant_surface_area': { x: 880, y: 1678 },
-  'run_capability_absquant_volume': { x: 1160, y: 1678 },
-  'run_derived_capability': { x: 40, y: 1714 },
-  'run_illumina_sample': { x: 320, y: 1714 },
-  'run_pacbio_sample': { x: 600, y: 1714 }
+  'run_amplicon_sample': { x: 320, y: 1678 },
+  'run_capability': { x: 600, y: 1678 },
+  'run_capability_absquant_mass': { x: 880, y: 1678 },
+  'run_capability_absquant_surface_area': { x: 1160, y: 1678 },
+  'run_capability_absquant_volume': { x: 40, y: 1714 },
+  'run_derived_capability': { x: 320, y: 1714 },
+  'run_illumina_sample': { x: 600, y: 1714 },
+  'run_pacbio_sample': { x: 880, y: 1714 }
 };
 
 var svg = document.getElementById('canvas');

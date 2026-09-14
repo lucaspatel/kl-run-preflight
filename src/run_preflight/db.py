@@ -719,6 +719,11 @@ class PacbioSampleRow(NamedTuple):
         return "pacbio"
 
     @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the sample source this row reads from."""
+        return sample_kind_names(cls.sample_kind())
+
+    @classmethod
     def from_run_view(cls, values: tuple) -> PacbioSampleRow:
         """Build from a run_pacbio_sample value tuple in field order."""
         row = cls._make(values)
@@ -751,8 +756,48 @@ class IlluminaSampleRow(NamedTuple):
         return "illumina"
 
     @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the sample source this row reads from."""
+        return sample_kind_names(cls.sample_kind())
+
+    @classmethod
     def from_run_view(cls, values: tuple) -> IlluminaSampleRow:
         """Build from a run_illumina_sample value tuple in field order.
+
+        No column needs storage-to-domain coercion, so this is a direct map.
+        """
+        return cls._make(values)
+
+
+class AmpliconSampleRow(NamedTuple):
+    """Amplicon-specific column of one amplicon_sample row.
+
+    Amplicon is deliberately not a PlatformSpecificSampleKind — a run carries a
+    single in-line Golay barcode, not an i5/i7 pair — so this row reads from the
+    run_amplicon_sample view directly rather than through the sample-kind naming
+    convention, supplying its own source_names. Field names match the view
+    columns; the field order drives the SELECT built in
+    _get_platform_specific_sample_info.
+    """
+
+    barcode: str
+
+    @classmethod
+    def source_names(cls) -> _SampleKindNames:
+        """DB object names for the amplicon sample source.
+
+        amplicon_sample has no surrogate key, so its per-sample handle is
+        prepped_sample_idx rather than an <kind>_sample_idx.
+        """
+        return _SampleKindNames(
+            table="amplicon_sample",
+            idx_col="prepped_sample_idx",
+            run_view="run_amplicon_sample",
+        )
+
+    @classmethod
+    def from_run_view(cls, values: tuple) -> AmpliconSampleRow:
+        """Build from a run_amplicon_sample value tuple in field order.
 
         No column needs storage-to-domain coercion, so this is a direct map.
         """
@@ -775,7 +820,7 @@ class PlatformSampleInfo(NamedTuple):
     biosample_accession: str
     primary_bioproject_accession: str
     secondary_bioproject_accessions: list[str]
-    kind_row: IlluminaSampleRow | PacbioSampleRow
+    kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
 
 
 # Error categories and per-row labels for invariant/accession violations.
@@ -804,14 +849,14 @@ def _raise_violations(
 
 def _get_platform_specific_sample_info(
     conn: sqlite3.Connection,
-    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow],
+    row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow] | type[AmpliconSampleRow],
     *,
     include_do_not_use: bool = False,
 ) -> list[PlatformSampleInfo]:
     """Return per-sample biosample + bioproject accession info for the run.
 
     Resolves the sole processing_run via get_single_run_idx and returns
-    one PlatformSampleInfo per *row_cls* sample row, ordered by that kind's
+    one PlatformSampleInfo per *row_cls* sample row, ordered by the source's
     sample-idx. secondary_bioproject_accessions lists accessions for every
     non-primary plate project (populated only for controls; empty for
     non-control samples), sorted by accession value; kind_row is a *row_cls*
@@ -825,7 +870,7 @@ def _get_platform_specific_sample_info(
             required accession (biosample, primary bioproject accession, or any
             secondary bioproject accession) is None on any row.
     """
-    names = sample_kind_names(row_cls.sample_kind())
+    names = row_cls.source_names()
     run_idx = get_single_run_idx(conn)
     cur = conn.cursor()
     do_not_use_filter = _do_not_use_filter(include_do_not_use, "rs.")
@@ -956,6 +1001,26 @@ def get_pacbio_sample_info(
     """
     return _get_platform_specific_sample_info(
         conn, PacbioSampleRow, include_do_not_use=include_do_not_use
+    )
+
+
+def get_amplicon_sample_info(
+    conn: sqlite3.Connection,
+    *,
+    include_do_not_use: bool = False,
+) -> list[PlatformSampleInfo]:
+    """Return per-amplicon_sample accession + amplicon row; see shared helper.
+
+    The accession-gated counterpart to get_amplicon_barcode_roster: it requires
+    every referenced project to have its NCBI accessions populated (a preflight
+    with a required accession still NULL raises ``ValueError``), so it is the
+    reader a consumer calls to provision a run keyed by biosample accession.
+    kind_row is an AmpliconSampleRow carrying the sample's Golay barcode, and
+    samples are keyed and ordered by prepped_sample_idx (amplicon_sample has no
+    surrogate key).
+    """
+    return _get_platform_specific_sample_info(
+        conn, AmpliconSampleRow, include_do_not_use=include_do_not_use
     )
 
 
