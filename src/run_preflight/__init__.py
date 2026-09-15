@@ -1,7 +1,6 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
 from .db import (
-    AmpliconBarcodeRosterEntry,
     AmpliconSampleRow,
     IlluminaSampleRow,
     KatharoseqSampleInfo,
@@ -9,7 +8,6 @@ from .db import (
     PlatformSampleInfo,
     add_katharoseq_sample,
     create_db,
-    get_amplicon_barcode_roster,
     get_amplicon_sample_info,
     get_illumina_sample_info,
     get_katharoseq_sample_info,
@@ -36,14 +34,12 @@ from .updates import (
 
 __all__ = [
     "create_db",
-    "AmpliconBarcodeRosterEntry",
     "AmpliconSampleRow",
     "IlluminaSampleRow",
     "KatharoseqSampleInfo",
     "PacbioSampleRow",
     "PlatformSampleInfo",
     "add_katharoseq_sample",
-    "get_amplicon_barcode_roster",
     "get_amplicon_sample_info",
     "get_illumina_sample_info",
     "get_katharoseq_sample_info",

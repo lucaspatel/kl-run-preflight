@@ -102,15 +102,15 @@ until the first release is tagged.
   is the platform/library-prep axis.
 
 - **`get_amplicon_sample_info`**, the accession-gated per-sample reader for an
-  amplicon run — the counterpart to `get_amplicon_barcode_roster`. Returns one
+  amplicon run — the single reader a golay-demux consumer needs. Returns one
   `PlatformSampleInfo` per `amplicon_sample` (keyed by `prepped_sample_idx`,
   since amplicon_sample has no surrogate key), carrying the biosample and
   bioproject accessions, `sample_type`, and an `AmpliconSampleRow` with the Golay
-  barcode; like the platform readers it raises if a required accession is NULL. It
-  reuses the shared accession-resolution helper via a new per-row `source_names()`
-  classmethod, so amplicon shares that one implementation without being pulled
-  into `PlatformSpecificSampleKind` (it has no i5/i7 platform row). Adds the
-  `run_amplicon_sample` view (schema patch `002`).
+  `barcode` and `barcodes_are_rc`; like the platform readers it raises if a
+  required accession is NULL. It reuses the shared accession-resolution helper via
+  a new per-row `source_names()` classmethod, so amplicon shares that one
+  implementation without being pulled into `PlatformSpecificSampleKind` (it has no
+  i5/i7 platform row). Adds the `run_amplicon_sample` view (schema patch `002`).
 
 ### Changed
 
@@ -133,9 +133,6 @@ until the first release is tagged.
 - **A sheet whose `control_description` disagrees with its sample names is
   rejected at load.** The Data view regenerates that column from the sample
   type, so a disagreeing source value would otherwise be silently rewritten.
-
-- **`get_amplicon_barcode_roster` reads `barcodes_are_rc` from `amplicon_run`**
-  rather than re-deriving it by string-matching the primer at read time.
 
 - **Round-trip normalization is delimiter-aware, and its whole-number rule is
   scoped to a cell.** Applied to the whole text it rewrote sample names that

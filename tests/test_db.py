@@ -163,6 +163,7 @@ def _seed_amplicon(
         sample_type_name=sample_type_name,
         well=well,
     )
+    _helpers.seed_amplicon_run(conn, run_idx)
     _helpers.seed_amplicon_sample(conn, prs_idx, barcode=f"bc_{sample_name}")
     conn.commit()
     return ins_idx, prs_idx
@@ -170,7 +171,7 @@ def _seed_amplicon(
 
 def _expected_amplicon_row(sample_name: str) -> AmpliconSampleRow:
     """Build the AmpliconSampleRow _seed_amplicon produces for *sample_name*."""
-    return AmpliconSampleRow(f"bc_{sample_name}")
+    return AmpliconSampleRow(f"bc_{sample_name}", True)
 
 
 class TestGetIlluminaSampleInfo(unittest.TestCase):
@@ -1188,6 +1189,7 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
             [
                 "prepped_sample_idx",
                 "barcode",
+                "barcodes_are_rc",
                 "run_idx",
                 "input_sample_idx",
                 "sample_name",

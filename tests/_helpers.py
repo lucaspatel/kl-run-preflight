@@ -475,3 +475,19 @@ def seed_amplicon_sample(
         (prs_idx, barcode),
     )
     return cur.lastrowid
+
+
+def seed_amplicon_run(
+    conn: sqlite3.Connection,
+    run_idx: int,
+    *,
+    barcodes_are_rc: bool = True,
+) -> None:
+    """Insert the run's amplicon_run row (idempotent per run_idx)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO amplicon_run "
+        "(run_idx, primer, linker, target_gene, target_subfragment, "
+        " pcr_primers, sequencing_meth, barcodes_are_rc) "
+        "VALUES (?, 'GTGYCAGCMGCCGCGGTAA', '', '16S rRNA', 'V4', '', '', ?)",
+        (run_idx, barcodes_are_rc),
+    )

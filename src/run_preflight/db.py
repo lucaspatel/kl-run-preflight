@@ -770,17 +770,19 @@ class IlluminaSampleRow(NamedTuple):
 
 
 class AmpliconSampleRow(NamedTuple):
-    """Amplicon-specific column of one amplicon_sample row.
+    """Amplicon-specific columns of one amplicon_sample row.
 
     Amplicon is deliberately not a PlatformSpecificSampleKind — a run carries a
     single in-line Golay barcode, not an i5/i7 pair — so this row reads from the
     run_amplicon_sample view directly rather than through the sample-kind naming
-    convention, supplying its own source_names. Field names match the view
-    columns; the field order drives the SELECT built in
-    _get_platform_specific_sample_info.
+    convention, supplying its own source_names. barcode + barcodes_are_rc are the
+    per-sample facts a golay-demux consumer needs (barcodes_are_rc is run-constant
+    but surfaced per row for the roster). Field names match the view columns; the
+    field order drives the SELECT built in _get_platform_specific_sample_info.
     """
 
     barcode: str
+    barcodes_are_rc: bool
 
     @classmethod
     def source_names(cls) -> _SampleKindNames:
@@ -799,9 +801,10 @@ class AmpliconSampleRow(NamedTuple):
     def from_run_view(cls, values: tuple) -> AmpliconSampleRow:
         """Build from a run_amplicon_sample value tuple in field order.
 
-        No column needs storage-to-domain coercion, so this is a direct map.
+        barcodes_are_rc is a SQLite BOOLEAN stored as 0/1; surface it as bool.
         """
-        return cls._make(values)
+        row = cls._make(values)
+        return row._replace(barcodes_are_rc=bool(row.barcodes_are_rc))
 
 
 class PlatformSampleInfo(NamedTuple):
@@ -1011,13 +1014,13 @@ def get_amplicon_sample_info(
 ) -> list[PlatformSampleInfo]:
     """Return per-amplicon_sample accession + amplicon row; see shared helper.
 
-    The accession-gated counterpart to get_amplicon_barcode_roster: it requires
-    every referenced project to have its NCBI accessions populated (a preflight
-    with a required accession still NULL raises ``ValueError``), so it is the
-    reader a consumer calls to provision a run keyed by biosample accession.
-    kind_row is an AmpliconSampleRow carrying the sample's Golay barcode, and
-    samples are keyed and ordered by prepped_sample_idx (amplicon_sample has no
-    surrogate key).
+    Requires every referenced project to have its NCBI accessions populated (a
+    preflight with a required accession still NULL raises ``ValueError``), so it
+    is the reader a consumer calls to provision a run keyed by biosample
+    accession. kind_row is an AmpliconSampleRow carrying the sample's Golay
+    barcode and barcodes_are_rc (all a golay-demux roster needs), and samples are
+    keyed and ordered by prepped_sample_idx (amplicon_sample has no surrogate
+    key).
     """
     return _get_platform_specific_sample_info(
         conn, AmpliconSampleRow, include_do_not_use=include_do_not_use
@@ -1058,55 +1061,6 @@ def add_katharoseq_sample(
         "VALUES (?, ?, ?)",
         (input_sample_idx, rack_id, number_of_cells),
     )
-
-
-class AmpliconBarcodeRosterEntry(NamedTuple):
-    """One sample's row in the Golay barcode roster a demux consumer needs.
-
-    sample_name / biosample_accession are the JOIN KEYS to the consumer's own
-    identity (Qiita resolves biosample_accession -> its prep_sample_idx);
-    barcode is the Golay sequence; sample_type is standard/blank/katharoseq.
-    """
-
-    sample_name: str | None
-    biosample_accession: str | None
-    barcode: str
-    barcodes_are_rc: bool
-    sample_type: str
-
-
-def get_amplicon_barcode_roster(
-    conn: sqlite3.Connection,
-) -> list[AmpliconBarcodeRosterEntry]:
-    """Per-sample Golay barcode roster, ordered by prepped_sample_idx.
-
-    NOT accession-gated (unlike get_amplicon_sample_info): a prep-template-only DB
-    whose accessions are not yet assigned still yields a roster, because demux
-    needs only the barcode plus a join key — so this is the reader a golay-demux
-    consumer calls.
-
-    barcodes_are_rc is read from amplicon_run, where it is stored once per run
-    (inferred from the primer at ingest; see _barcodes_are_rc_for_primer)."""
-    cur = conn.execute(
-        "SELECT i.sample_name, i.biosample_accession, a.barcode, st.name, "
-        "       ar.barcodes_are_rc "
-        "FROM amplicon_sample a "
-        "JOIN prepped_sample p ON a.prepped_sample_idx = p.prepped_sample_idx "
-        "JOIN compression_sample c "
-        "  ON p.compression_sample_idx = c.compression_sample_idx "
-        "JOIN input_sample i ON c.input_sample_idx = i.input_sample_idx "
-        "JOIN sample_type st ON i.sample_type_idx = st.sample_type_idx "
-        "JOIN amplicon_run ar ON c.run_idx = ar.run_idx "
-        "ORDER BY a.prepped_sample_idx"
-    )
-    return [
-        AmpliconBarcodeRosterEntry(
-            sample_name, biosample_accession, barcode,
-            bool(barcodes_are_rc), sample_type,
-        )
-        for sample_name, biosample_accession, barcode, sample_type, barcodes_are_rc
-        in cur.fetchall()
-    ]
 
 
 def get_katharoseq_sample_info(

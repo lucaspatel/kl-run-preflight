@@ -12,7 +12,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_preflight import get_amplicon_barcode_roster
 from run_preflight.legacy.api import load_legacy_csv, open_file, save_legacy_csv
 from run_preflight.legacy.roundtrip import roundtrip_via_api
 
@@ -99,7 +98,8 @@ class TestAmpliconPrepProjection(unittest.TestCase):
         conn = self._load("good_amplicon_16s_v1.txt")
         try:
             run = conn.execute(
-                "SELECT primer, target_gene, target_subfragment FROM amplicon_run"
+                "SELECT primer, target_gene, target_subfragment, barcodes_are_rc "
+                "FROM amplicon_run"
             ).fetchall()
             plates = conn.execute(
                 "SELECT plate_name, primer_plate, extraction_robot "
@@ -107,7 +107,8 @@ class TestAmpliconPrepProjection(unittest.TestCase):
             ).fetchall()
         finally:
             conn.close()
-        self.assertEqual(run, [("GTGYCAGCMGCCGCGGTAA", "16S rRNA", "V4")])
+        # barcodes_are_rc is inferred from the EMP 515f primer and stored once.
+        self.assertEqual(run, [("GTGYCAGCMGCCGCGGTAA", "16S rRNA", "V4", 1)])
         self.assertEqual(len(plates), 4)
         self.assertTrue(all(primer_plate for _, primer_plate, _ in plates))
 
@@ -126,16 +127,6 @@ class TestAmpliconPrepProjection(unittest.TestCase):
             conn.close()
         self.assertEqual(illumina_rows, 0)
         self.assertEqual(illumina_run_rows, 1)
-
-    def test_barcode_roster_reads_without_accessions(self):
-        conn = self._load("good_amplicon_16s_v1.txt")
-        try:
-            roster = get_amplicon_barcode_roster(conn)
-        finally:
-            conn.close()
-        self.assertEqual(len(roster), 317)
-        self.assertTrue(all(entry.barcode for entry in roster))
-        self.assertTrue(all(entry.barcodes_are_rc is True for entry in roster))
 
 
 class TestAmpliconPrepRejection(unittest.TestCase):

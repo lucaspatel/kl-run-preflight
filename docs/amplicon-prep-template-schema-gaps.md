@@ -43,4 +43,5 @@ the bridge is the **biosample accession**, not a shared idx: preflight
 `sample_name` / `input_sample.biosample_accession` → Qiita biosample →
 `prep_sample.idx`. Flow: register the study's biosamples in Qiita → write
 accessions back into the preflight DB (`set_biosample_accession`) → at submit,
-read `get_amplicon_barcode_roster` and join on `biosample_accession`.
+read `get_amplicon_sample_info` (its `AmpliconSampleRow` carries `barcode` and
+`barcodes_are_rc`) and join on `biosample_accession`.

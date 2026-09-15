@@ -322,6 +322,7 @@ CREATE VIEW run_amplicon_sample AS
     SELECT
         a.prepped_sample_idx,
         a.barcode,
+        ar.barcodes_are_rc,
         cs.run_idx,
         cs.input_sample_idx,
         psn.sample_name,
@@ -330,5 +331,6 @@ CREATE VIEW run_amplicon_sample AS
     FROM amplicon_sample a
     JOIN prepped_sample prs ON a.prepped_sample_idx = prs.prepped_sample_idx
     JOIN compression_sample cs ON prs.compression_sample_idx = cs.compression_sample_idx
+    JOIN amplicon_run ar ON cs.run_idx = ar.run_idx
     JOIN prepped_sample_name psn ON a.prepped_sample_idx = psn.prepped_sample_idx
     JOIN prepped_sample_project psp ON a.prepped_sample_idx = psp.prepped_sample_idx;
