@@ -30,9 +30,10 @@ on reconstruction, so a source value that disagrees is rejected at load.
   format's optional column group. When a sheet carries them they are typed onto
   `katharoseq_sample`; `good_amplicon_16s_v1.txt` omits them, so its KatharoSeq
   controls are typed by name only, with no per-control cell count.
-- **`barcodes_are_rc` → stored.** Currently *derived* at read time in
-  `get_amplicon_barcode_roster` from the primer (an EMP 515f forward primer marks
-  the EMP 515rcbc set); not stored on `amplicon_run`.
+- **More amplicon assays.** `barcodes_are_rc` is stored on `amplicon_run`,
+  inferred from the primer at ingest (`_barcodes_are_rc_for_primer`), but only the
+  EMP 515f assay is recognised today — an unrecognised primer raises. Extend that
+  mapping when another amplicon assay is supported.
 
 ## Qiita handoff (barcode roster)
 

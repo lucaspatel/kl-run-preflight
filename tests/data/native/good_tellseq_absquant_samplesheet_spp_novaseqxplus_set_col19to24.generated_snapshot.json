@@ -5371,9 +5371,18 @@
           1,
           null,
           0
+        ],
+        [
+          7,
+          "barcodes_are_rc",
+          "BOOLEAN",
+          1,
+          null,
+          0
         ]
       ],
       "definition": [
+        "barcodes_are_rc BOOLEAN NOT NULL",
         "linker TEXT NOT NULL",
         "pcr_primers TEXT NOT NULL",
         "primer TEXT NOT NULL",

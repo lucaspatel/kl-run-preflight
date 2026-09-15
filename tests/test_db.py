@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import get_args
 
 from run_preflight.constants import (
+    EMP_515F_PRIMER,
     PLATFORM_ILLUMINA,
     SECTION_DATA,
     PlatformSpecificSampleKind,
@@ -25,6 +26,7 @@ from run_preflight.db import (
     IlluminaSampleRow,
     PacbioSampleRow,
     PlatformSampleInfo,
+    _barcodes_are_rc_for_primer,
     _has_do_not_use_token,
     create_db,
     get_amplicon_sample_info,
@@ -1193,6 +1195,18 @@ class TestGetAmpliconSampleInfo(unittest.TestCase):
                 "project_name",
             ],
         )
+
+
+class TestBarcodesAreRcInference(unittest.TestCase):
+    """barcodes_are_rc is inferred from the primer at ingest, fail-loud."""
+
+    def test_emp_515f_primer_is_rc(self):
+        self.assertIs(_barcodes_are_rc_for_primer(EMP_515F_PRIMER), True)
+
+    def test_unrecognised_primer_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            _barcodes_are_rc_for_primer("ACGTACGT")
+        self.assertIn("barcode orientation", str(ctx.exception))
 
 
 class TestPacbioSmrtCellWellSampleIdConstraint(unittest.TestCase):

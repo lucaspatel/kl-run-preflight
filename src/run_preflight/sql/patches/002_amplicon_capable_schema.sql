@@ -42,7 +42,11 @@ CREATE TABLE amplicon_run (
     target_gene         TEXT NOT NULL,
     target_subfragment  TEXT NOT NULL,
     pcr_primers         TEXT NOT NULL,
-    sequencing_meth     TEXT NOT NULL
+    sequencing_meth     TEXT NOT NULL,
+    -- whether the Golay barcodes are stored reverse-complemented; the prep
+    -- template does not state this, so it is inferred from the primer at ingest
+    -- (see _barcodes_are_rc_for_primer), mirroring illumina_run.barcodes_are_rc.
+    barcodes_are_rc     BOOLEAN NOT NULL
 );
 
 -- ------------------------------------------------------- katharoseq_sample

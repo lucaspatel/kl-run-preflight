@@ -1085,27 +1085,26 @@ def get_amplicon_barcode_roster(
     needs only the barcode plus a join key — so this is the reader a golay-demux
     consumer calls.
 
-    barcodes_are_rc is derived from the assay: an EMP 515f forward primer marks
-    the reverse-complemented 515rcbc Golay set (True). The primer is read from
-    amplicon_run, where it is stored once per run. Interim signal pending typed
-    target_gene/target_subfragment (see the schema-gaps note)."""
+    barcodes_are_rc is read from amplicon_run, where it is stored once per run
+    (inferred from the primer at ingest; see _barcodes_are_rc_for_primer)."""
     cur = conn.execute(
-        "SELECT i.sample_name, i.biosample_accession, a.barcode, st.name, ar.primer "
+        "SELECT i.sample_name, i.biosample_accession, a.barcode, st.name, "
+        "       ar.barcodes_are_rc "
         "FROM amplicon_sample a "
         "JOIN prepped_sample p ON a.prepped_sample_idx = p.prepped_sample_idx "
         "JOIN compression_sample c "
         "  ON p.compression_sample_idx = c.compression_sample_idx "
         "JOIN input_sample i ON c.input_sample_idx = i.input_sample_idx "
         "JOIN sample_type st ON i.sample_type_idx = st.sample_type_idx "
-        "LEFT JOIN amplicon_run ar ON c.run_idx = ar.run_idx "
+        "JOIN amplicon_run ar ON c.run_idx = ar.run_idx "
         "ORDER BY a.prepped_sample_idx"
     )
     return [
         AmpliconBarcodeRosterEntry(
             sample_name, biosample_accession, barcode,
-            primer == EMP_515F_PRIMER, sample_type,
+            bool(barcodes_are_rc), sample_type,
         )
-        for sample_name, biosample_accession, barcode, sample_type, primer
+        for sample_name, biosample_accession, barcode, sample_type, barcodes_are_rc
         in cur.fetchall()
     ]
 
@@ -1673,11 +1672,30 @@ def _populate_illumina_run_from_sections(
     )
 
 
+def _barcodes_are_rc_for_primer(primer: str) -> bool:
+    """Whether an amplicon run's Golay barcodes are stored reverse-complemented.
+
+    The prep template does not state barcode orientation; it is a property of the
+    assay. An EMP 515f run uses the reverse-complemented 515rcbc Golay set, so its
+    barcodes are stored RC. Only that assay is recognised today, so an
+    unrecognised primer raises rather than guessing an orientation that would
+    silently mis-demux. Extend the mapping when another amplicon assay is added.
+    """
+    if primer == EMP_515F_PRIMER:
+        return True
+    raise ValueError(
+        f"cannot determine barcode orientation for amplicon primer {primer!r}: "
+        f"only the EMP 515f primer ({EMP_515F_PRIMER}) is recognised"
+    )
+
+
 def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: D18 extended to run-level populators (R6)
     """Insert an amplicon_run row if the amplicon prep columns are present.
 
     Every column is constant across a run -- the wet lab does not mix primers
-    within one -- so the first Data row supplies them all.
+    within one -- so the first Data row supplies them all. barcodes_are_rc is not
+    a sheet column; it is inferred from the primer (fail-loud) and stored, so the
+    orientation is a queryable fact rather than re-derived by every reader.
 
     Args:
         cur: An open SQLite cursor.
@@ -1687,19 +1705,21 @@ def _populate_amplicon_run(cur, run_idx: int, row: dict):  # same-pattern-ok: D1
     if COL_AMPLICON_PRIMER not in row:
         return
 
+    primer = row[COL_AMPLICON_PRIMER]
     cur.execute(
         "INSERT INTO amplicon_run "
         "(run_idx, primer, linker, target_gene, target_subfragment, "
-        " pcr_primers, sequencing_meth) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " pcr_primers, sequencing_meth, barcodes_are_rc) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             run_idx,
-            row[COL_AMPLICON_PRIMER],
+            primer,
             row[COL_AMPLICON_LINKER],
             row[COL_AMPLICON_TARGET_GENE],
             row[COL_AMPLICON_TARGET_SUBFRAGMENT],
             row[COL_AMPLICON_PCR_PRIMERS],
             row[COL_AMPLICON_SEQUENCING_METH],
+            _barcodes_are_rc_for_primer(primer),
         ),
     )
 

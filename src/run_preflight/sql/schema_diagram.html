@@ -686,7 +686,12 @@ var SCHEMA = {
         },
         {
           "name": "sequencing_meth",
-          "type": "TEXT"
+          "type": "TEXT",
+          "note": "whether the Golay barcodes are stored reverse-complemented; the prep template does not state this, so it is inferred from the primer at ingest (see _barcodes_are_rc_for_primer), mirroring illumina_run.barcodes_are_rc."
+        },
+        {
+          "name": "barcodes_are_rc",
+          "type": "BOOLEAN"
         }
       ]
     },
@@ -1180,10 +1185,10 @@ var POSITIONS = {
   'tellseq_sample': { x: 720, y: 448 },
   'pacbio_sample': { x: 720, y: 570 },
   'amplicon_run': { x: 1020, y: 60 },
-  'metagenomic_absquant_sample': { x: 1020, y: 236 },
-  'metatranscriptomic_sample': { x: 1020, y: 430 },
-  'amplicon_sample': { x: 1020, y: 516 },
-  'katharoseq_sample': { x: 1020, y: 602 },
+  'metagenomic_absquant_sample': { x: 1020, y: 254 },
+  'metatranscriptomic_sample': { x: 1020, y: 448 },
+  'amplicon_sample': { x: 1020, y: 534 },
+  'katharoseq_sample': { x: 1020, y: 620 },
   'legacy_section_format': { x: 40, y: 318 },
   'legacy_samplesheet_format': { x: 40, y: 386 },
   'legacy_samplesheet_view': { x: 40, y: 688 },

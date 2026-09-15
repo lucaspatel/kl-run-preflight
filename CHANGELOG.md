@@ -70,11 +70,12 @@ until the first release is tagged.
 
 - **`amplicon_run` holds the amplicon facts that are constant across a run**
   (schema patch `002`): `primer`, `linker`, `target_gene`, `target_subfragment`,
-  `pcr_primers`, and `sequencing_meth`, all `NOT NULL` because every observed
-  prep template carries a real value for each. It is a workflow table rather
-  than a platform one — the same facts would describe an amplicon run on PacBio.
-  Barcode orientation is deliberately not stored: no prep template records it,
-  and the one reader that needs it derives it from the primer sequence.
+  `pcr_primers`, `sequencing_meth`, and `barcodes_are_rc`, all `NOT NULL`. It is a
+  workflow table rather than a platform one — the same facts would describe an
+  amplicon run on PacBio. The prep template does not record barcode orientation,
+  so `barcodes_are_rc` is inferred from the primer at ingest (fail-loud on an
+  unrecognised primer) and stored once per run, mirroring
+  `illumina_run.barcodes_are_rc` rather than being re-derived by every reader.
 - **`input_plate` carries the plate-tier prep facts** `primer_plate`, `plating`,
   `extractionkit_lot`, `extraction_robot`, `platemap_generation_date`, and
   `plate_contents_description`, all nullable. The last is deliberately not named
@@ -133,8 +134,8 @@ until the first release is tagged.
   rejected at load.** The Data view regenerates that column from the sample
   type, so a disagreeing source value would otherwise be silently rewritten.
 
-- **`get_amplicon_barcode_roster` reads the primer from `amplicon_run`**
-  rather than string-matching the verbatim store.
+- **`get_amplicon_barcode_roster` reads `barcodes_are_rc` from `amplicon_run`**
+  rather than re-deriving it by string-matching the primer at read time.
 
 - **Round-trip normalization is delimiter-aware, and its whole-number rule is
   scoped to a cell.** Applied to the whole text it rewrote sample names that
