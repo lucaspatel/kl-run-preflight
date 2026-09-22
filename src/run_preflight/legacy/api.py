@@ -1,4 +1,4 @@
-"""Consumer-facing wrappers for legacy omnibus CSV operations."""
+"""Consumer-facing wrappers for legacy sample-sheet operations."""
 
 from __future__ import annotations
 
@@ -17,12 +17,22 @@ from ..db import (
     populate_db,
 )
 from ..file_io import open_db_file, save_db_file
-from .parser import parse_omnibus
+from .parser import parse_amplicon_prep, parse_omnibus
 from .reconstruct import reconstruct_omnibus
-from .validate import validate_omnibus
+from .validate import validate_sections
 
 # SQLite database files begin with this 16-byte magic header (see https://sqlite.org/fileformat.html)
 _SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _has_section_labels(path: str) -> bool:
+    """True if the sheet's first non-blank line is a [Section] label."""
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if stripped:
+                return stripped.startswith("[")
+    return False
 
 
 def open_file(path: str) -> sqlite3.Connection:
@@ -52,23 +62,31 @@ def open_file(path: str) -> sqlite3.Connection:
 
 
 def load_legacy_csv(csv_path: str) -> sqlite3.Connection:
-    """Parse a legacy omnibus CSV into a fresh in-memory SQLite connection.
+    """Parse a legacy sample sheet into a fresh in-memory SQLite connection.
 
-    The returned connection is at the latest schema version with
-    foreign-key enforcement enabled. Caller owns and must close it.
+    Handles both the sectioned omnibus CSVs and the flat, section-less
+    amplicon prep templates; the two differ only in how their sections are
+    recovered, after which they share one validate and populate path. The
+    returned connection is at the latest schema version with foreign-key
+    enforcement enabled. Caller owns and must close it.
 
     Raises:
-        ValueError: If the CSV fails validation against the format registry.
+        ValueError: If the sheet fails validation against the format registry.
     """
     # Build a fresh in-memory DB and tear it down on any downstream error
     conn = create_db(":memory:")
     try:
-        # Pull section format definitions from the freshly-created DB
-        section_formats = get_section_formats(conn)
+        # A sheet with no [Section] label lines carries its sections spread
+        # across the columns of a single table, and is regrouped rather than
+        # split apart.
+        if _has_section_labels(csv_path):
+            section_formats = get_section_formats(conn)
+            sections = parse_omnibus(csv_path, section_formats)
+        else:
+            sections = parse_amplicon_prep(csv_path, conn)
 
-        # Parse and validate against the registry before any writes
-        sections = parse_omnibus(csv_path, section_formats)
-        errors = validate_omnibus(conn, sections)
+        # Validate against the registry before any writes
+        errors = validate_sections(conn, sections)
         if errors:
             raise ValueError("Validation errors:\n  " + "\n  ".join(errors))
 
