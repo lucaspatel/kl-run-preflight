@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import csv
 import io
-from pathlib import Path
 
 from ..constants import (
     ASSAY_AMPLICON,
@@ -83,8 +82,27 @@ def parse_omnibus(filepath: str, section_formats: dict[str, str]) -> dict:
           - list[str] for values-only sections (e.g. Reads)
           - list[dict] for tabular sections (e.g. Data, Contact)
     """
+    text = read_omnibus_text(filepath)
+    sections = parse_omnibus_text(text, section_formats)
+    return sections
+
+
+def read_omnibus_text(filepath: str) -> str:
+    """Read an omnibus CSV file into text.
+
+    The single place that decides how an omnibus CSV file on disk becomes
+    a string. ``newline=""`` leaves embedded line endings intact so the
+    csv module sees the file's own quoting and row breaks.
+
+    Args:
+        filepath: Path to the omnibus CSV file on disk.
+
+    Returns:
+        str: The full file content.
+    """
     with open(filepath, newline="") as fh:
-        return parse_omnibus_text(fh.read(), section_formats)
+        text = fh.read()
+    return text
 
 
 def parse_omnibus_text(text: str, section_formats: dict[str, str]) -> dict:
@@ -233,24 +251,23 @@ def control_context_type_for(sample_name: str) -> str | None:
     return None
 
 
-def _read_prep_template(filepath: str, delimiter: str) -> list[list[str]]:
-    """Read a flat prep template into rows, rejecting a malformed sheet.
+def _split_prep_template(text: str, delimiter: str) -> list[list[str]]:
+    """Split flat prep-template content into rows, rejecting a malformed sheet.
 
     The format has no quoting and no embedded delimiters or newlines, so a
     manual split is exact.
 
     Raises:
-        ValueError: If the file has no data rows, or any row's width differs
-            from the header's.
+        ValueError: If the content has no data rows, or any row's width
+            differs from the header's.
     """
-    text = Path(filepath).read_text(encoding="utf-8")
-    lines = text.split("\n")
+    lines = text.splitlines()
     while lines and lines[-1] == "":
         lines.pop()
     rows = [line.split(delimiter) for line in lines]
     if len(rows) < 2:
         raise ValueError(
-            f"{filepath} has a header but no sample rows; nothing to load"
+            "prep template has a header but no sample rows; nothing to load"
         )
 
     width = len(rows[0])
@@ -263,9 +280,9 @@ def _read_prep_template(filepath: str, delimiter: str) -> list[list[str]]:
     return rows
 
 
-def parse_amplicon_prep(filepath: str, conn) -> dict:
-    """Read a flat amplicon prep template and return the same sections a
-    sectioned sheet parses into.
+def parse_amplicon_prep(text: str, conn) -> dict:
+    """Parse flat amplicon prep-template content and return the same sections
+    a sectioned sheet parses into.
 
     The sheet is one table with no [Section] labels, so the sections other
     than Data are lifted out of its columns: project-grain facts become
@@ -274,7 +291,7 @@ def parse_amplicon_prep(filepath: str, conn) -> dict:
     own column names, which the format declares.
 
     Raises:
-        ValueError: If the file is malformed or its header matches no
+        ValueError: If the content is malformed or its header matches no
             registered amplicon format.
     """
     cur = conn.cursor()
@@ -284,7 +301,7 @@ def parse_amplicon_prep(filepath: str, conn) -> dict:
         (SHEET_TYPE_AMPLICON,),
     ).fetchone()[0]
 
-    rows = _read_prep_template(filepath, delimiter)
+    rows = _split_prep_template(text, delimiter)
     header, data_rows = rows[0], rows[1:]
     _, version = get_amplicon_format_for_header(cur, header)
     data = [dict(zip(header, row)) for row in data_rows]

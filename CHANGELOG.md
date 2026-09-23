@@ -114,101 +114,33 @@ until the first release is tagged.
   a new per-row `source_names()` classmethod, so amplicon shares that one
   implementation without being pulled into `PlatformSpecificSampleKind` (it has no
   i5/i7 platform row). Adds the `run_amplicon_sample` view (schema patch `002`).
+- `load_db_file` and `load_db_bytes`, which read a native run preflight into a
+  detached in-memory connection: pending schema patches are applied to the copy,
+  so the source file or blob is never written. Paired with `dump_db_bytes`,
+  which serializes a connection to database-file bytes, they let a consumer hold
+  a run preflight as an opaque blob and decide separately whether to keep an
+  edit. Both reject input lacking the SQLite file header with a `ValueError`
+  naming the offending input, where a raw deserialize would report only a bare
+  `sqlite3.DatabaseError: file is not a database` (or, for empty input, a
+  `MemoryError`). Input that carries the header but is truncated or otherwise
+  unreadable gets past that check and raises `sqlite3.DatabaseError`, which
+  both entry points document.
+- `load_file`, which loads a run preflight from either supported format by
+  detecting the file's type, replacing `open_file`. A native file is sniffed and
+  read through a single handle, so the bytes loaded are the ones the header
+  check saw.
+- `load_legacy_csv_text`, which parses legacy sample sheet content already
+  decoded to text — either shape, sectioned or flat — so a consumer holding the
+  content in memory need not write a temporary file. It is the text counterpart to `load_db_bytes`, and it takes
+  `str` rather than `bytes` because the caller owns any decision about how its
+  bytes became text.
+- `SchemaVersionTooNewError`, raised when a database's schema version exceeds the
+  shipped patch set. It subclasses `ValueError`, so an existing handler still
+  catches it, but a consumer can now tell "this file came from a newer
+  run_preflight" apart from a malformed request. The neighbouring
+  "patch sequence has missing files" case stays a bare `ValueError`: it reports a
+  defect in the installed package, not a property of the caller's input.
 
-### Changed
-
-- **Prep-template facts land in typed homes rather than a verbatim store.**
-  The prep template previously typed only nine columns, keeping the rest in
-  `legacy_extra_column`; run-constant facts now live on `amplicon_run`,
-  plate-constant facts on `input_plate`, the 96-well position on
-  `input_sample.well`, the tube barcode on `input_sample.matrix_tube_id`, and
-  the Golay barcode on `amplicon_sample`, leaving only the genuinely free-form
-  columns verbatim.
-
-- **KatharoSeq and blank controls are typed from their name prefix,
-  case-insensitively.** A `KATHARO.` / `BLANK.` prefix types the control
-  whatever its capitalisation; when the sheet also carries `Kathseq_RackID` and
-  `number_of_cells`, those land on `katharoseq_sample`. Matching is otherwise
-  literal: a name such as `BLANK2.2A` is deliberately not treated as a blank,
-  because whether a numbered prefix marks one is a question about that sheet's
-  convention rather than something the loader should infer.
-
-- **A sheet whose `control_description` disagrees with its sample names is
-  rejected at load.** The Data view regenerates that column from the sample
-  type, so a disagreeing source value would otherwise be silently rewritten.
-
-- **Round-trip normalization is delimiter-aware, and its whole-number rule is
-  scoped to a cell.** Applied to the whole text it rewrote sample names that
-  embed their own values, turning `katharo.ADAPT.21.E11.18000.0` into
-  `…18000`.
-
-- **`validate_omnibus` is now `validate_sections`**, and
-  `processing_run.source_column_order` is gone — column order is recovered
-  from the format's view, so no sheet needs its own header persisted.
-
-- **Reconstruction views may carry a reserved `prepped_sample_idx`.** View
-  introspection already hid `run_idx` from the output; it now hides any reserved
-  column, and a view with no printable key of its own can carry the row's
-  identity for ordering and for matching carried-through columns. Previously
-  that identity came from `Sample_ID`, which every omnibus view happens to
-  define as the primary key — a coincidence no format without a `Sample_ID`
-  column could rely on.
-
-- **A `[Reads]`-less source no longer fails to load.** `illumina_run`'s read
-  lengths became nullable so a document recording no run configuration could
-  still carry a row, but the loader still indexed the section unconditionally.
-  Absent read lengths are now stored as NULL.
-
-- **`prepped_sample.sample_name` is populated only when it differs** from the
-  input sample's name, as the column's contract states. It was written on every
-  row of any sheet carrying an `orig_name` column.
-
-- **The loader reads Data columns by the names the format declares, and no
-  longer sniffs the well column out of the file.** `populate_db` previously
-  hardcoded `Sample_Name`, `Sample_Plate`, `Sample_Project`, and
-  `Well_description`, and chose the well column by testing whether
-  `well_id_384` happened to be present. Both assumed every format speaks the
-  omnibus vocabulary. The seeded names reproduce exactly what was hardcoded and
-  sniffed, verified by every committed native snapshot regenerating unchanged
-  apart from its schema version.
-
-- **The loader reads a file's platform, instrument, and per-sample table from
-  the registry instead of inferring them from its name.** `populate_db`
-  previously substring-matched `SheetType` for `"pacbio"` and `"tellseq"` to
-  decide the platform, the instrument, which `_populate_*_sample` to call, and
-  whether to write an `illumina_run` row — so a naming coincidence was
-  load-bearing, and a future format containing either token would silently take
-  that path. Dispatch now goes through a `sample_kind`-keyed map of the same
-  functions, which are themselves unchanged. The seeded values reproduce what
-  the inference produced, verified by every committed native snapshot
-  regenerating identically apart from its schema version.
-
-- **`katharoseq_sample.number_of_cells` is `REAL`, not `INTEGER`** (schema patch
-  `002`). KatharoSeq serial dilutions reach fractional cell counts — `38.4` and
-  `7.68` both occur in real prep templates — which `INTEGER` silently truncated.
-
-- **Every Illumina run now has an `illumina_run` record.** A run loaded from the
-  amplicon prep template is sequenced on Illumina but the prep template
-  records no run configuration, so it previously produced a database with
-  `platform = Illumina` and no `illumina_run` row — the first break in an
-  invariant that held across every other preflight. The amplicon loader now
-  inserts an `illumina_run` row whose configuration columns are all NULL,
-  meaning "this ran on Illumina; this document does not state the run config".
-  A guard test loads every legacy sheet — sectioned and flat — and fails if any
-  run's platform and its run-config table disagree.
-- **`illumina_run.read1_length` / `read2_length` are nullable** (schema patch
-  `002`), so a run whose source document omits read lengths can still carry an
-  `illumina_run` row. NULL expresses "not recorded", which `0` cannot. The patch
-  rebuilds the table, since SQLite cannot drop `NOT NULL` in place, dropping and
-  recreating the four dependent views around the rebuild.
-- **Native fixture snapshots record `user_version`.** The snapshots exist to make
-  the opaque `.sqlite` diffs reviewable, but omitted the schema version — the one
-  piece of structure held outside `sqlite_master`. A database stale in version
-  alone compared equal, and the version bump behind a fixture regeneration was
-  invisible in review. `capture_db_snapshot` now captures it.
-- **`input_sample.matrix_tube_id`** (nullable) — the physical matrix/tube barcode,
-  moved off `katharoseq_sample.tube_code` since it is a per-sample fact, not
-  KatharoSeq-specific (schema patch `002`).
 - Nullable `smrt_cell_well_sample_id` column on `pacbio_sample` recording the SMRT Cell
   position, constrained to `<1|2>_<A-D>01` (`GLOB '[12]_[A-D]01'`), plus a nullable
   `movie_context_id` column, both surfaced by a new `run_pacbio_sample` view mirroring
@@ -304,7 +236,170 @@ until the first release is tagged.
 
 ### Changed
 
-- Raised the supported Python floor to 3.11.
+- **Prep-template facts land in typed homes rather than a verbatim store.**
+  The prep template previously typed only nine columns, keeping the rest in
+  `legacy_extra_column`; run-constant facts now live on `amplicon_run`,
+  plate-constant facts on `input_plate`, the 96-well position on
+  `input_sample.well`, the tube barcode on `input_sample.matrix_tube_id`, and
+  the Golay barcode on `amplicon_sample`, leaving only the genuinely free-form
+  columns verbatim.
+
+- **KatharoSeq and blank controls are typed from their name prefix,
+  case-insensitively.** A `KATHARO.` / `BLANK.` prefix types the control
+  whatever its capitalisation; when the sheet also carries `Kathseq_RackID` and
+  `number_of_cells`, those land on `katharoseq_sample`. Matching is otherwise
+  literal: a name such as `BLANK2.2A` is deliberately not treated as a blank,
+  because whether a numbered prefix marks one is a question about that sheet's
+  convention rather than something the loader should infer.
+
+- **A sheet whose `control_description` disagrees with its sample names is
+  rejected at load.** The Data view regenerates that column from the sample
+  type, so a disagreeing source value would otherwise be silently rewritten.
+
+- **Round-trip normalization is delimiter-aware, and its whole-number rule is
+  scoped to a cell.** Applied to the whole text it rewrote sample names that
+  embed their own values, turning `katharo.ADAPT.21.E11.18000.0` into
+  `…18000`.
+
+- **`validate_omnibus` is now `validate_sections`**, and
+  `processing_run.source_column_order` is gone — column order is recovered
+  from the format's view, so no sheet needs its own header persisted.
+
+- **Reconstruction views may carry a reserved `prepped_sample_idx`.** View
+  introspection already hid `run_idx` from the output; it now hides any reserved
+  column, and a view with no printable key of its own can carry the row's
+  identity for ordering and for matching carried-through columns. Previously
+  that identity came from `Sample_ID`, which every omnibus view happens to
+  define as the primary key — a coincidence no format without a `Sample_ID`
+  column could rely on.
+
+- **A `[Reads]`-less source no longer fails to load.** `illumina_run`'s read
+  lengths became nullable so a document recording no run configuration could
+  still carry a row, but the loader still indexed the section unconditionally.
+  Absent read lengths are now stored as NULL.
+
+- **`prepped_sample.sample_name` is populated only when it differs** from the
+  input sample's name, as the column's contract states. It was written on every
+  row of any sheet carrying an `orig_name` column.
+
+- **The loader reads Data columns by the names the format declares, and no
+  longer sniffs the well column out of the file.** `populate_db` previously
+  hardcoded `Sample_Name`, `Sample_Plate`, `Sample_Project`, and
+  `Well_description`, and chose the well column by testing whether
+  `well_id_384` happened to be present. Both assumed every format speaks the
+  omnibus vocabulary. The seeded names reproduce exactly what was hardcoded and
+  sniffed, verified by every committed native snapshot regenerating unchanged
+  apart from its schema version.
+
+- **The loader reads a file's platform, instrument, and per-sample table from
+  the registry instead of inferring them from its name.** `populate_db`
+  previously substring-matched `SheetType` for `"pacbio"` and `"tellseq"` to
+  decide the platform, the instrument, which `_populate_*_sample` to call, and
+  whether to write an `illumina_run` row — so a naming coincidence was
+  load-bearing, and a future format containing either token would silently take
+  that path. Dispatch now goes through a `sample_kind`-keyed map of the same
+  functions, which are themselves unchanged. The seeded values reproduce what
+  the inference produced, verified by every committed native snapshot
+  regenerating identically apart from its schema version.
+
+- **`katharoseq_sample.number_of_cells` is `REAL`, not `INTEGER`** (schema patch
+  `002`). KatharoSeq serial dilutions reach fractional cell counts — `38.4` and
+  `7.68` both occur in real prep templates — which `INTEGER` silently truncated.
+
+- **Every Illumina run now has an `illumina_run` record.** A run loaded from the
+  amplicon prep template is sequenced on Illumina but the prep template
+  records no run configuration, so it previously produced a database with
+  `platform = Illumina` and no `illumina_run` row — the first break in an
+  invariant that held across every other preflight. The amplicon loader now
+  inserts an `illumina_run` row whose configuration columns are all NULL,
+  meaning "this ran on Illumina; this document does not state the run config".
+  A guard test loads every legacy sheet — sectioned and flat — and fails if any
+  run's platform and its run-config table disagree.
+- **`illumina_run.read1_length` / `read2_length` are nullable** (schema patch
+  `002`), so a run whose source document omits read lengths can still carry an
+  `illumina_run` row. NULL expresses "not recorded", which `0` cannot. The patch
+  rebuilds the table, since SQLite cannot drop `NOT NULL` in place, dropping and
+  recreating the four dependent views around the rebuild.
+- **Native fixture snapshots record `user_version`.** The snapshots exist to make
+  the opaque `.sqlite` diffs reviewable, but omitted the schema version — the one
+  piece of structure held outside `sqlite_master`. A database stale in version
+  alone compared equal, and the version bump behind a fixture regeneration was
+  invisible in review. `capture_db_snapshot` now captures it.
+- **`input_sample.matrix_tube_id`** (nullable) — the physical matrix/tube barcode,
+  moved off `katharoseq_sample.tube_code` since it is a per-sample fact, not
+  KatharoSeq-specific (schema patch `002`).
+- **Breaking:** `open_db_file` is removed. It connected directly to the caller's
+  file and committed schema patches into it, so merely reading a stored preflight
+  rewrote it — silently today, because patch `001` is the only patch and a
+  current file needs no work, and universally the day patch `002` ships.
+  Replacing it with `load_db_file` makes every load path detached and leaves
+  `save_db_file`, which keeps its name, as the one call that reaches disk. The
+  schema upgrade is no longer sticky: a file behind the patch set stays behind
+  until someone saves it, which is the point of the change rather than a side
+  effect.
+- **Breaking:** loading a file of either format now returns a detached in-memory
+  connection. Previously a legacy CSV yielded a detached connection while a
+  SQLite file yielded a file-backed one whose edits persisted without any save,
+  so a caller handling both formats could not write one correct save path.
+- Loading a native file reads its raw bytes instead of connecting to it, which
+  skips SQLite's crash recovery. A hot journal left by a writer that died
+  mid-transaction is no longer replayed, so the database loads in its
+  un-rolled-back state: against a 50,000-row table SIGKILLed mid-update, the
+  load reports 49,707 rows carrying the uncommitted change where a
+  `sqlite3.connect` would have rolled all of them back and reported none. The
+  image is torn rather than merely stale, so a file left behind by a crashed
+  writer needs checking before it is trusted.
+- `save_db_file` writes serialized bytes instead of calling `Connection.backup`.
+  `backup` retries indefinitely when the source connection holds an uncommitted
+  write transaction, which hangs the caller outright — and does so
+  uninterruptibly, since it blocks in C holding the GIL — measured on CPython
+  3.14, where a committed source returns in under a millisecond and an
+  uncommitted one survives SIGINT and needs SIGKILL. A plain byte write has no
+  such failure mode.
+- Every file this package writes — `save_db_file`, `save_legacy_csv`,
+  `save_bclconvert_v1_csv`, and `save_legacy_sample_id_map_csv` — now goes
+  through `atomic_write`, which stages the content in a temporary file in the
+  target's own directory and renames it into place. A write that fails partway
+  leaves the caller's existing file untouched instead of truncated, so the
+  no-clobber posture that governs the load paths now covers the write paths too.
+- Staging and renaming changes what a write does to a symlink or a hardlink.
+  A plain write followed the link and updated its target, and updated every
+  name pointing at a hardlinked file; the rename replaces the link itself with
+  a regular file, leaving the old target untouched, and breaks the hardlink so
+  the other names keep the previous content. Anywhere a stable pointer such as
+  `latest.csv` is kept, the pointer is now the file that gets replaced.
+- **Breaking:** `migrate_legacy_csv_to_db_file` no longer deletes `db_path` on
+  failure. Its cleanup ran in a `finally` that also covered the CSV load, so a
+  validation error destroyed whatever file already sat at `db_path` even though
+  nothing had been written there. With the write now atomic, a partial database
+  can never appear at that path, so the cleanup had nothing left to clean and the
+  data-loss path went with it.
+- **Breaking:** `create_db` now raises `FileExistsError` when a file already
+  exists at the requested path. Its docstring claimed an existing file "will be
+  overwritten by SQLite's default behaviour", which was untrue — `sqlite3.connect`
+  opens such a file, and the unguarded schema DDL then failed partway through with
+  a bare `table ... already exists`. The path is now refused up front, by name,
+  and the check tests the path itself rather than what it resolves to, so a
+  symlink is refused whether or not it currently points at anything.
+- **Breaking:** the minimum supported Python is now 3.11, up from 3.9. The
+  detached-load implementation is built on `sqlite3.Connection.serialize` and
+  `.deserialize`, which are 3.11+. `environment.yml` now declares the floor
+  too, so a local `conda env create` resolves an interpreter the package can
+  actually run on rather than whatever conda picks.
+- Written files carry the permissions an ordinary write would have given them:
+  an existing file keeps its own mode, and a new one gets the default creation
+  mode narrowed by the process umask. Staging would otherwise have decided the
+  result, since `mkstemp` creates its file at `0600`, so the mode a plain write
+  would have produced is resolved and applied before the rename.
+- The lint rule set is declared explicitly in `pyproject.toml` as
+  `select = ["E4", "E7", "E9", "F"]` rather than inherited, because ruff's
+  implicit default selection changes between releases, which would otherwise
+  keep changing what CI enforces without any change to this project.
+- `load_db_file` checks the SQLite file header off its first read instead of
+  after pulling the whole file into memory, so a large non-database input is
+  rejected without the needless read. The rejection now names the offending
+  path rather than the generic `blob`.
+
 - Reorganized test data into `tests/data/legacy/` (legacy omnibus CSVs) and
   `tests/data/native/` (native SQLite files and snapshots); renamed four
   real-world-named good CSVs to the `good_` convention and the
@@ -343,6 +438,13 @@ until the first release is tagged.
 - Renamed the `project.qiita_id` DB column to `external_project_id`, preserving
   the `QiitaID` / `primary_qiita_study` / `secondary_qiita_studies` CSV emit
   aliases and carrying the change to existing DBs via a rename patch.
+
+### Deprecated
+
+- `open_file` is now a thin alias for `load_file` and emits a
+  `DeprecationWarning`. Every read entry point is named `load_*`, and `open`
+  implied a handle on the caller's file that no load path has returned since
+  the detached-load change. The alias delegates, so behaviour is identical.
 
 ### Fixed
 

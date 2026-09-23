@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_preflight.legacy.api import load_legacy_csv, open_file, save_legacy_csv
+from run_preflight.legacy.api import load_file, load_legacy_csv, save_legacy_csv
 
 DATA_DIR = Path(__file__).parent / "data" / "legacy"
 
@@ -65,14 +65,14 @@ class TestAmpliconPrepRoundTrip(unittest.TestCase):
                     conn.close()
                 self.assertEqual(_content(DATA_DIR / name), _content(out))
 
-    def test_open_file_accepts_a_prep_template(self):
-        # open_file dispatches on content, so a prep template reaches the same
+    def test_load_file_accepts_a_prep_template(self):
+        # load_file dispatches on content, so a prep template reaches the same
         # loader as an omnibus CSV without the caller naming a format. Column
         # order is normalized on comparison, so the check is on the column set
         # and the row count the write produced.
         sheet = DATA_DIR / "good_amplicon_v1_katharoseq.txt"
         out_path = self.tmp_dir / "out.txt"
-        conn = open_file(str(sheet))
+        conn = load_file(str(sheet))
         try:
             save_legacy_csv(conn, str(out_path))
         finally:
