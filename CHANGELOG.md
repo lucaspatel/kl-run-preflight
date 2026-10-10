@@ -15,6 +15,17 @@ until the first release is tagged.
 
 ### Added
 
+- **An amplicon sample can be identified by its matrix tube.**
+  `get_amplicon_sample_info(accept_tube_identity=True)` accepts a row whose
+  input sample carries a `matrix_tube_id` without a biosample or primary
+  bioproject accession, so a consumer that resolves samples by tube can read a
+  pre-flight before any accession exists. A secondary bioproject accession is
+  still required, since only its accession names that project, and a row with
+  neither a tube nor the accessions is still refused. The default keeps the
+  accession-only contract. `PlatformSampleInfo` gains a trailing
+  `matrix_tube_id` field (default `None`), and its biosample and primary
+  bioproject accessions are typed `str | None`.
+
 - **Amplicon prep templates load through the shared pipeline.** A flat,
   section-less prep template is now parsed by `parse_amplicon_prep`, which
   regroups its single table into the same sections a sectioned sheet parses

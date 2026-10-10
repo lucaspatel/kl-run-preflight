@@ -1089,6 +1089,167 @@ class TestGetPacbioSampleInfo(unittest.TestCase):
         self.assertEqual(twisted_types, [bool, bool, type(None)])
 
 
+def _set_matrix_tube_id(
+    conn: sqlite3.Connection, input_sample_idx: int, tube: str
+) -> None:
+    """Give an input_sample a matrix tube id (the seed helpers leave it NULL)."""
+    conn.execute(
+        "UPDATE input_sample SET matrix_tube_id = ? WHERE input_sample_idx = ?",
+        (tube, input_sample_idx),
+    )
+    conn.commit()
+
+
+class TestGetAmpliconSampleInfoTubeIdentity(unittest.TestCase):
+    """accept_tube_identity lets a matrix tube id stand in for the accessions.
+
+    A consumer that resolves samples by tube (looking the tube up in its own
+    registry) needs neither the biosample nor the bioproject accession on a row
+    that carries a tube; a row with neither identity is still refused.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmpdir.name, "test.db")
+        conn = create_db(self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_tube_without_accessions_accepted(self):
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=None
+            )
+            ins_idx, prs_idx = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _set_matrix_tube_id(conn, ins_idx, "363157924")
+
+        with open_db(self.db_path) as conn:
+            result = get_amplicon_sample_info(conn, accept_tube_identity=True)
+
+        self.assertEqual(
+            result,
+            [
+                PlatformSampleInfo(
+                    prs_idx,
+                    "standard",
+                    None,
+                    None,
+                    [],
+                    _expected_amplicon_row("S1"),
+                    "363157924",
+                )
+            ],
+        )
+
+    def test_control_tube_without_accessions_accepted(self):
+        # A blank has no project of its own; its tube is its identity too.
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn, primary_bioproject_accession=None)
+            ins_idx, prs_idx = _seed_amplicon(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            _set_matrix_tube_id(conn, ins_idx, "364353076")
+
+        with open_db(self.db_path) as conn:
+            (info,) = get_amplicon_sample_info(conn, accept_tube_identity=True)
+
+        self.assertEqual(info.sample_type, "extraction_blank")
+        self.assertEqual(info.matrix_tube_id, "364353076")
+        self.assertIsNone(info.biosample_accession)
+
+    def test_tube_does_not_stand_in_for_a_secondary_project(self):
+        # A blank on a plate shared with a second project: the tube names the
+        # blank, but the second project is named only by its accession.
+        with open_db(self.db_path) as conn:
+            _, plate, run = _seed_run_skeleton(conn, primary_bioproject_accession=None)
+            proj2 = _helpers.seed_project(
+                conn,
+                project_name="proj2",
+                external_project_id="2",
+                bioproject_accession=None,
+            )
+            _helpers.seed_input_sample(conn, plate, proj2, sample_name="S2")
+            ins_idx, prs_idx = _seed_amplicon(
+                conn,
+                plate,
+                None,
+                run,
+                sample_name="blank1",
+                well="A1",
+                sample_type_name="extraction_blank",
+            )
+            _set_matrix_tube_id(conn, ins_idx, "364353076")
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaises(ValueError) as ctx:
+                get_amplicon_sample_info(conn, accept_tube_identity=True)
+
+        msg = str(ctx.exception)
+        self.assertIn(ERR_CATEGORY_MISSING_ACCESSION, msg)
+        self.assertIn(f"prepped_sample_idx={prs_idx}", msg)
+        self.assertIn("secondary_bioproject_accessions", msg)
+        self.assertNotIn("(biosample_accession)", msg)
+
+    def test_no_tube_and_no_accession_raise_err(self):
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=None
+            )
+            _, prs_idx = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"missing required accession: prepped_sample_idx={prs_idx} "
+                r"\(biosample_accession\)",
+            ):
+                get_amplicon_sample_info(conn, accept_tube_identity=True)
+
+    def test_tube_without_accessions_refused_by_default(self):
+        # Accession-keyed consumers keep today's contract unless they opt in.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(
+                conn, primary_bioproject_accession=None
+            )
+            ins_idx, _ = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            _set_matrix_tube_id(conn, ins_idx, "363157924")
+
+        with open_db(self.db_path) as conn:
+            with self.assertRaisesRegex(ValueError, "missing required accession"):
+                get_amplicon_sample_info(conn)
+
+    def test_accession_rows_report_their_tube(self):
+        # The tube rides along on accession-keyed rows too, so a consumer can
+        # cross-check the two identities.
+        with open_db(self.db_path) as conn:
+            proj, plate, run = _seed_run_skeleton(conn)
+            ins_idx, _ = _seed_amplicon(
+                conn, plate, proj, run, sample_name="S1", well="A1"
+            )
+            set_biosample_accession(conn, "S1", "SAMN001")
+            _set_matrix_tube_id(conn, ins_idx, "363157924")
+
+        with open_db(self.db_path) as conn:
+            (info,) = get_amplicon_sample_info(conn)
+
+        self.assertEqual(info.biosample_accession, "SAMN001")
+        self.assertEqual(info.matrix_tube_id, "363157924")
+
+
 class TestGetAmpliconSampleInfo(unittest.TestCase):
     """get_amplicon_sample_info wires the shared helper to amplicon_sample.
 

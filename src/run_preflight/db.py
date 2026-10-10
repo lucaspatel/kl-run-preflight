@@ -825,15 +825,19 @@ class PlatformSampleInfo(NamedTuple):
     sample_type.name (e.g. "standard", "extraction_blank");
     secondary_bioproject_accessions is populated only for project-agnostic
     controls added at prep-time and is empty for all other samples
-    (including controls project-specific controls).
+    (including controls project-specific controls). matrix_tube_id is the
+    input sample's tube, when it has one. biosample_accession and
+    primary_bioproject_accession are None only on a row read with
+    accept_tube_identity, where the tube identifies the sample.
     """
 
     sample_idx: int
     sample_type: str
-    biosample_accession: str
-    primary_bioproject_accession: str
+    biosample_accession: str | None
+    primary_bioproject_accession: str | None
     secondary_bioproject_accessions: list[str]
     kind_row: IlluminaSampleRow | PacbioSampleRow | AmpliconSampleRow
+    matrix_tube_id: str | None = None
 
 
 # Error categories and per-row labels for invariant/accession violations.
@@ -865,6 +869,7 @@ def _get_platform_specific_sample_info(
     row_cls: type[PacbioSampleRow] | type[IlluminaSampleRow] | type[AmpliconSampleRow],
     *,
     include_do_not_use: bool = False,
+    accept_tube_identity: bool = False,
 ) -> list[PlatformSampleInfo]:
     """Return per-sample biosample + bioproject accession info for the run.
 
@@ -875,13 +880,16 @@ def _get_platform_specific_sample_info(
     non-control samples), sorted by accession value; kind_row is a *row_cls*
     instance carrying the platform-specific columns (its field order drives
     the SELECT). Rows whose effective do_not_use flag is set are excluded
-    unless *include_do_not_use* is True.
+    unless *include_do_not_use* is True. With *accept_tube_identity*, a row
+    whose input sample has a matrix_tube_id needs no biosample or primary
+    bioproject accession: the consumer identifies it by the tube instead.
 
     Raises:
         ValueError: If the control / project_idx pairing is violated
             on any row (raised before any accession check), or if any
             required accession (biosample, primary bioproject accession, or any
-            secondary bioproject accession) is None on any row.
+            secondary bioproject accession) is None, a tube exempting only the
+            biosample and primary bioproject accessions.
     """
     names = row_cls.source_names()
     run_idx = get_single_run_idx(conn)
@@ -907,6 +915,7 @@ def _get_platform_specific_sample_info(
                      primary_proj.bioproject_accession),
             ipp.project_idx,
             secondary_proj.bioproject_accession,
+            ins.matrix_tube_id,
             {kind_select}
         FROM {names.run_view} rs
         JOIN input_sample ins
@@ -945,7 +954,8 @@ def _get_platform_specific_sample_info(
         # The kind columns are constant across a control's grouped rows;
         # read them from the first row and rebuild the platform-specific row
         # (from_run_view applies any storage-to-domain coercion).
-        kind_row = row_cls.from_run_view(first_row[7:])
+        matrix_tube_id = first_row[7]
+        kind_row = row_cls.from_run_view(first_row[8:])
 
         # Enforce control / project_idx pairing before reading accessions
         is_standard = sample_type_name == SAMPLE_TYPE_STANDARD
@@ -960,10 +970,14 @@ def _get_platform_specific_sample_info(
         # Collect non-primary plate projects' bioproject_accessions
         secondary = [r[6] for r in group_rows if r[5] is not None]
 
-        # Record any missing accession for the summary report
-        if biosample is None:
+        # Record any missing accession for the summary report. When the caller
+        # opted in, a tube stands in for the biosample and its primary project
+        # (the consumer finds both from the tube); a secondary project is named
+        # only by its accession, so it is required either way.
+        tube_identifies = accept_tube_identity and matrix_tube_id is not None
+        if biosample is None and not tube_identifies:
             accession_offenders.append((sample_idx, "biosample_accession"))
-        if primary_bioproject is None:
+        if primary_bioproject is None and not tube_identifies:
             accession_offenders.append((sample_idx, "primary_bioproject_accession"))
         if any(b is None for b in secondary):
             accession_offenders.append((sample_idx, "secondary_bioproject_accessions"))
@@ -976,6 +990,7 @@ def _get_platform_specific_sample_info(
                 primary_bioproject,
                 secondary,
                 kind_row,
+                matrix_tube_id,
             )
         )
 
@@ -1021,6 +1036,7 @@ def get_amplicon_sample_info(
     conn: sqlite3.Connection,
     *,
     include_do_not_use: bool = False,
+    accept_tube_identity: bool = False,
 ) -> list[PlatformSampleInfo]:
     """Return per-amplicon_sample accession + amplicon row; see shared helper.
 
@@ -1030,10 +1046,15 @@ def get_amplicon_sample_info(
     accession. kind_row is an AmpliconSampleRow carrying the sample's Golay
     barcode and barcodes_are_rc (all a golay-demux roster needs), and samples are
     keyed and ordered by prepped_sample_idx (amplicon_sample has no surrogate
-    key).
+    key). A consumer that resolves samples by matrix tube passes
+    *accept_tube_identity*, so a row with a tube needs no biosample or primary
+    bioproject accession.
     """
     return _get_platform_specific_sample_info(
-        conn, AmpliconSampleRow, include_do_not_use=include_do_not_use
+        conn,
+        AmpliconSampleRow,
+        include_do_not_use=include_do_not_use,
+        accept_tube_identity=accept_tube_identity,
     )
 
 
