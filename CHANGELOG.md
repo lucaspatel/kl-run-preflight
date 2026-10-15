@@ -15,6 +15,20 @@ until the first release is tagged.
 
 ### Added
 
+- **A pre-flight can be authored programmatically, without a legacy CSV.** New
+  builders in `run_preflight.authoring` — `create_run`, `add_project`,
+  `add_input_plate`, `add_pacbio_sample`, `set_amplicon_details` — write the
+  normalized schema directly, for a modality that has no legacy sample sheet to
+  launder (the first consumer is a long-read PacBio amplicon run). They mirror
+  the test seed helpers and the `populate_db` convention: each walks the
+  dependency chain and none commit, so a whole run is built atomically by the
+  caller. `create_run` assumes a fresh `create_db` (one run per DB).
+- **`amplicon_run.umi_pattern`** (schema patch 003). A long-read amplicon
+  protocol carries unique molecular identifiers in its construct; the UMI values
+  are detected downstream, but the permissive UMI *pattern* is a per-run protocol
+  fact, so the pre-flight records it. Nullable; NULL for a run with no UMI
+  (every amplicon run to date).
+
 - **An amplicon sample can be identified by its matrix tube.**
   `get_amplicon_sample_info(accept_tube_identity=True)` accepts a row whose
   input sample carries a `matrix_tube_id` without a biosample or primary

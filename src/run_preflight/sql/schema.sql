@@ -735,7 +735,11 @@ CREATE TABLE amplicon_run (
     -- whether the Golay barcodes are stored reverse-complemented; the prep
     -- template does not state this, so it is inferred from the primer at ingest
     -- (see _barcodes_are_rc_for_primer), mirroring illumina_run.barcodes_are_rc.
-    barcodes_are_rc     BOOLEAN NOT NULL
+    barcodes_are_rc     BOOLEAN NOT NULL,
+    -- the permissive UMI pattern (e.g. 'NNNYRNNNYRNNN') for a long-read amplicon
+    -- protocol that carries UMIs; NULL for a run with no UMI. The UMI values are
+    -- detected and extracted downstream, not stored; only the per-run pattern is.
+    umi_pattern         TEXT
 );
 
 -- ============================================================

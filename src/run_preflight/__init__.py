@@ -1,5 +1,12 @@
 """run_preflight — SQLite-backed representation of a sequencing run preflight."""
 
+from .authoring import (
+    add_input_plate,
+    add_pacbio_sample,
+    add_project,
+    create_run,
+    set_amplicon_details,
+)
 from .db import (
     AmpliconSampleRow,
     IlluminaSampleRow,
@@ -43,6 +50,11 @@ from .updates import (
 
 __all__ = [
     "create_db",
+    "create_run",
+    "add_project",
+    "add_input_plate",
+    "add_pacbio_sample",
+    "set_amplicon_details",
     "AmpliconSampleRow",
     "IlluminaSampleRow",
     "KatharoseqSampleInfo",
